@@ -1,24 +1,13 @@
 const express = require('express');
-const pool = require('./db'); 
+const app = express();
 require('dotenv').config();
 
-const app = express();
-const PORT = 3000;
+const authRoutes = require('./routes/auth');
 
-app.get('/', (req, res) => {
-  res.send('Hello from Express!');
-});
+app.use(express.json());
+app.use('/api', authRoutes);
 
-app.get('/test-db', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT NOW()');
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('DB Error');
-  }
-});
-
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
