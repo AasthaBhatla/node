@@ -1,10 +1,22 @@
 const pool = require('../db');
 const jwt = require('jsonwebtoken');
 
+// OTP generator
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-exports.requestOtp = async (req, res) => {
-  const { email, phone } = req.body;
+// Normalize phone to include +91
+function normalizePhone(phone) {
+  if (!phone) return null;
+  phone = phone.replace(/\D/g, ''); // remove non-digits
+  if (phone.startsWith('0')) phone = phone.slice(1); // remove leading 0
+  if (!phone.startsWith('91')) phone = '91' + phone; // assume Indian number
+  return '+' + phone;
+}
+
+// LOGIN
+exports.login = async (req, res) => {
+  const { email, phone: rawPhone } = req.body;
+  const phone = normalizePhone(rawPhone);
 
   if (!email && !phone) {
     return res.status(400).json({ error: 'Please provide email or phone' });
@@ -16,6 +28,7 @@ exports.requestOtp = async (req, res) => {
       [email || null, phone || null]
     );
     let user = result.rows[0];
+    let statusMessage = 'registered';
 
     if (!user) {
       const insertResult = await pool.query(
@@ -23,6 +36,7 @@ exports.requestOtp = async (req, res) => {
         [email || null, phone || null, 'registered']
       );
       user = insertResult.rows[0];
+      statusMessage = 'new user';
     }
 
     const otp = generateOtp();
@@ -33,15 +47,24 @@ exports.requestOtp = async (req, res) => {
     );
 
     console.log(`OTP sent to ${email || phone}: ${otp}`);
-    res.json({ message: `OTP sent to ${email || phone}` });
+    console.log(`status: ${statusMessage}`);
+
+    res.json({
+      message: `OTP sent to ${email || phone}`,
+      status: statusMessage,
+      dbStatus: user.status // optional if you want to check DB value
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
+// VERIFY OTP
 exports.verifyOtp = async (req, res) => {
-  const { email, phone, otp } = req.body;
+  const { email, phone: rawPhone, otp } = req.body;
+  const phone = normalizePhone(rawPhone);
 
   if (!otp || (!email && !phone)) {
     return res.status(400).json({ error: 'OTP and identifier required' });
@@ -56,13 +79,19 @@ exports.verifyOtp = async (req, res) => {
 
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.status === 'blocked') return res.status(403).json({ error: 'User is blocked' });
-    if (user.otp !== otp) return res.status(401).json({ error: 'Invalid OTP' });
+    if (user.otp !== otp.toString()) return res.status(401).json({ error: 'Invalid OTP' });
 
     await pool.query(`UPDATE users SET status = 'verified', otp = NULL WHERE id = $1`, [user.id]);
 
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-    res.json({ message: 'OTP verified', token });
+    console.log(`OTP verified for ${email || phone}`);
+    console.log(`Generated JWT Token: ${token}`);
+
+    res.json({
+      message: 'OTP verified',
+      token,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
