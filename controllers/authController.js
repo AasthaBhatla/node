@@ -5,6 +5,7 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 
 exports.requestOtp = async (req, res) => {
   const { email, phone } = req.body;
+
   if (!email && !phone) {
     return res.status(400).json({ error: 'Please provide email or phone' });
   }
@@ -14,9 +15,15 @@ exports.requestOtp = async (req, res) => {
       `SELECT * FROM users WHERE email = $1 OR phone = $2`,
       [email || null, phone || null]
     );
-    const user = result.rows[0];
+    let user = result.rows[0];
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      const insertResult = await pool.query(
+        `INSERT INTO users (email, phone, status) VALUES ($1, $2, $3) RETURNING *`,
+        [email || null, phone || null, 'registered']
+      );
+      user = insertResult.rows[0];
+    }
 
     const otp = generateOtp();
 
@@ -35,6 +42,7 @@ exports.requestOtp = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
   const { email, phone, otp } = req.body;
+
   if (!otp || (!email && !phone)) {
     return res.status(400).json({ error: 'OTP and identifier required' });
   }
@@ -52,11 +60,7 @@ exports.verifyOtp = async (req, res) => {
 
     await pool.query(`UPDATE users SET status = 'verified', otp = NULL WHERE id = $1`, [user.id]);
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     res.json({ message: 'OTP verified', token });
   } catch (err) {
