@@ -157,8 +157,9 @@ const getUsers = async (filters = {}) => {
     const logic = metaQuery.relation?.toUpperCase() === 'OR' ? 'OR' : 'AND';
     const metaConditions = [];
 
-    metaQuery.conditions.forEach(({ key, value }) => {
-      joins += ` JOIN user_metadata um_${i} ON um_${i}.user_id = u.id AND um_${i}.key = $${i++} AND um_${i}.value = $${i++}`;
+    metaQuery.conditions.forEach(({ key, value }, index) => {
+      const alias = `um_meta_${index}`;
+      joins += ` JOIN user_metadata ${alias} ON ${alias}.user_id = u.id AND ${alias}.key = $${i++} AND ${alias}.value = $${i++}`;
       values.push(key, value);
     });
   }
@@ -216,6 +217,64 @@ const getUsers = async (filters = {}) => {
   }
 };
 
+const saveDeviceToken = async (userId, deviceToken) => {
+  try {
+    await pool.query(
+      `INSERT INTO user_devices (user_id, device_token)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, device_token) DO NOTHING`,
+      [userId, deviceToken]
+    );
+  } catch (err) {
+    throw new Error('Error saving device token');
+  }
+};
+
+const removeDeviceToken = async (userId, deviceToken) => {
+  try {
+    await pool.query(
+      `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
+      [userId, deviceToken]
+    );
+  } catch (error) {
+    console.error('Error removing device token:', error);
+    throw new Error('Failed to remove device token');
+  }
+};
+const getUserProfileById = async (userId, withMetadata = true) => {
+  try {
+    const userRes = await pool.query(
+      `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (userRes.rows.length === 0) return null;
+
+    const user = userRes.rows[0];
+
+    if (!withMetadata) return user;
+
+    const metaRes = await pool.query(
+      `SELECT key, value FROM user_metadata WHERE user_id = $1`,
+      [userId]
+    );
+
+    const metadata = {};
+    metaRes.rows.forEach(({ key, value }) => {
+      metadata[key] = value;
+    });
+
+    return {
+      ...user,
+      metadata
+    };
+  } catch (err) {
+    console.error(err);
+    throw new Error('Error fetching user profile');
+  }
+};
+
+
 module.exports = {
   normalizePhone,
   getUserByEmailOrPhone,
@@ -228,5 +287,8 @@ module.exports = {
   getUserMetadata,
   updateUserRole,
   getUserById,
-  getUsers
+  getUsers,
+  saveDeviceToken,
+  removeDeviceToken,
+  getUserProfileById
 };
