@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const {
   normalizePhone,
   getUserByEmailOrPhone,
@@ -13,25 +15,26 @@ const {
   updateUserRole,
   saveDeviceToken,
   removeDeviceToken,
-  getUserById,
-  getUsers,
-  getUserProfileById
+  getUserById
 } = require('../services/userService');
 
 exports.login = async (req, res) => {
-  const { email, phone: rawPhone } = req.body;
+  const { email, phone: rawPhone, deviceToken } = req.body;
   const phone = normalizePhone(rawPhone);
 
   if (!email && !phone) {
     return res.status(400).json({ error: 'Provide email or phone' });
   }
 
+  if (!deviceToken) {
+    return res.status(400).json({ error: 'Device token is required' });
+  }
+
   try {
     let user = await getUserByEmailOrPhone(email, phone);
     if (!user) user = await insertUser(email, phone);
 
-    const deviceToken = crypto.randomBytes(8).toString('hex');
-    await saveDeviceToken(user.id, deviceToken);
+    await saveDeviceToken(user.id, deviceToken); 
 
     const otp = await setOtp(user.id);
     console.log(`OTP sent to ${email || phone}: ${otp}`);
@@ -79,8 +82,6 @@ exports.verifyOtp = async (req, res) => {
 
 exports.register = async (req, res) => {
   const {
-    email,
-    phone: rawPhone,
     firstName,
     middleName,
     lastName,
@@ -89,12 +90,11 @@ exports.register = async (req, res) => {
     role
   } = req.body;
 
-  const phone = normalizePhone(rawPhone);
   const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo'];
+  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
 
   if (!firstName || !lastName || !dob || !gender || !role) {
-    return res.status(400).json({ error: 'Missing fields' });
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   if (!allowedGenders.includes(gender.toLowerCase())) {
@@ -106,9 +106,9 @@ exports.register = async (req, res) => {
   }
 
   try {
-    const user = await getUserByEmailOrPhone(email, phone);
-    if (!user || user.id !== req.user.id) {
-      return res.status(403).json({ error: 'Unauthorized access' });
+    const user = req.user;
+    if (!user) {
+      return res.status(403).json({ error: 'User not found' });
     }
 
     await updateUserMetadata(user.id, {
@@ -116,16 +116,16 @@ exports.register = async (req, res) => {
       middle_name: middleName || '',
       last_name: lastName,
       dob,
-      gender: gender.toLowerCase()
+      gender
     });
-
     await updateUserRole(user.id, role.toLowerCase());
-    await markUserAsRegistered(user.id);
 
-    res.json({ message: 'Registration completed successfully', userId: user.id });
+    await markUserAsRegistered(user.id); 
+    return res.status(200).json({ message: 'Registration completed successfully' });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Registration error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -147,11 +147,15 @@ exports.logout = async (req, res) => {
 };
 
 exports.resendOtp = async (req, res) => {
-  const { email, phone: rawPhone } = req.body;
+  const { email, phone: rawPhone, deviceToken } = req.body;
   const phone = normalizePhone(rawPhone);
 
   if (!email && !phone) {
     return res.status(400).json({ error: 'Provide email or phone' });
+  }
+
+  if (!deviceToken) {
+    return res.status(400).json({ error: 'Device token is required' });
   }
 
   try {
@@ -160,11 +164,14 @@ exports.resendOtp = async (req, res) => {
       user = await insertUser(email, phone);
     }
 
+    await saveDeviceToken(user.id, deviceToken); // Save the provided device token
+
     const otp = await setOtp(user.id);
     console.log(`OTP resent to ${email || phone}: ${otp}`);
 
     res.json({
       message: 'OTP resent successfully',
+      deviceToken,
       status: user.status,
     });
   } catch (err) {
@@ -172,160 +179,3 @@ exports.resendOtp = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
-exports.getMe = async (req, res) => {
-  const userId = req.user.id;
-
-  try {
-    const user = await getUserById(userId); 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const metadata = await getUserMetadata(userId); 
-    res.json({ ...user, metadata });
-  } catch (err) {
-    console.error('Get user error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
-exports.updateMe = async (req, res) => {
-  const userId = req.user.id;
-  const {
-    firstName,
-    middleName,
-    lastName,
-    dob,
-    gender,
-    role
-  } = req.body;
-
-  const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo'];
-
-  if (gender && !allowedGenders.includes(gender.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid gender' });
-  }
-
-  if (role && !allowedRoles.includes(role.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid role' });
-  }
-
-  try {
-    const user = await getUserById(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    await updateUserMetadata(userId, {
-      ...(firstName && { first_name: firstName }),
-      ...(middleName && { middle_name: middleName }),
-      ...(lastName && { last_name: lastName }),
-      ...(dob && { dob }),
-      ...(gender && { gender: gender.toLowerCase() })
-    });
-
-    if (role) {
-      await updateUserRole(userId, role.toLowerCase());
-    }
-
-    res.json({ message: 'Profile updated successfully' });
-  } catch (err) {
-    console.error('Update user profile error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
-exports.getUsers = async (req, res) => {
-  try {
-    const {
-      role,
-      status,
-      count,
-      page,
-      orderBy,
-      order,
-      email,
-      phone,
-      search,
-      withMetadata
-    } = req.query;
-
-    const metaQuery = req.query.metaQuery
-      ? JSON.parse(req.query.metaQuery)
-      : undefined;
-
-    const filters = {
-      role,
-      status,
-      count: parseInt(count) || 10,
-      page: parseInt(page) || 1,
-      orderBy,
-      order,
-      email,
-      phone,
-      search,
-      withMetadata: withMetadata === 'true',
-      metaQuery,
-    };
-
-    const users = await getUsers(filters);
-    res.status(200).json({ users });
-  } catch (err) {
-    console.error('Error in getUsers controller:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-};
-exports.getUserById = async (req, res) => {
-  const userId = req.params.id;
-
-  try {
-    const user = await getUserById(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const metadata = await getUserMetadata(userId); 
-    res.json({ ...user, metadata });
-  } catch (err) {
-    console.error('Get user by ID error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
-exports.updateUserMetaByAdmin = async (req, res) => {
-  const requestingUser = req.user;
-  const targetUserId = req.params.id;
-  const { firstName, middleName, lastName, dob, gender, role } = req.body;
-
-  const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
-
-  if (gender && !allowedGenders.includes(gender.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid gender' });
-  }
-
-  if (role && !allowedRoles.includes(role.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid role' });
-  }
-
-  try {
-    if (requestingUser.role !== 'admin') {
-      return res.status(403).json({ error: 'Only admins can update other users\' metadata' });
-    }
-
-    const user = await getUserById(targetUserId);
-    if (!user) return res.status(404).json({ error: 'Target user not found' });
-
-    await updateUserMetadata(targetUserId, {
-      ...(firstName && { first_name: firstName }),
-      ...(middleName && { middle_name: middleName }),
-      ...(lastName && { last_name: lastName }),
-      ...(dob && { dob }),
-      ...(gender && { gender: gender.toLowerCase() }),
-    });
-
-    if (role) {
-      await updateUserRole(targetUserId, role.toLowerCase());
-    }
-
-    res.json({ message: 'User metadata updated by admin successfully' });
-  } catch (err) {
-    console.error('Update user meta by admin error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
-

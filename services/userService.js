@@ -60,34 +60,43 @@ const clearOtp = async (userId) => {
   }
 };
 
+// userService.js
 const markUserAsRegistered = async (userId) => {
+  console.log('Updating status for:', userId);
   try {
-    await pool.query(`UPDATE users SET status = 'registered' WHERE id = $1`, [userId]);
+    const result = await pool.query(
+      `UPDATE users SET status = 'registered' WHERE id = $1`,
+      [userId]
+    );
+    console.log('Update result:', result.rowCount); // Should be 1
   } catch (err) {
+    console.error('Error in markUserAsRegistered:', err);
     throw new Error('Error marking user as registered');
   }
 };
+
 
 const updateUserMetadata = async (userId, metadata) => {
   try {
     for (const [key, value] of Object.entries(metadata)) {
       if (key === 'role') continue;
       await pool.query(
-        `INSERT INTO user_metadata (user_id, key, value)
+        `INSERT INTO user_metadata (user_id, "key", value)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
         [userId, key, value]
       );
     }
   } catch (err) {
-    throw new Error('Error updating user metadata');
+  console.error('Error in updateUserMetadata:', err);
+  throw new Error('Error updating user metadata');
   }
 };
 
 const getUserMetadata = async (userId) => {
   try {
     const result = await pool.query(
-      `SELECT key, value FROM user_metadata WHERE user_id = $1`,
+      `SELECT "key", value FROM user_metadata WHERE user_id = $1`,
       [userId]
     );
     const metadata = {};
@@ -104,6 +113,7 @@ const updateUserRole = async (userId, role) => {
   try {
     await pool.query(`UPDATE users SET role = $1 WHERE id = $2`, [role, userId]);
   } catch (err) {
+    console.error('Error in updateUserRole:', err);
     throw new Error('Error updating user role');
   }
 };
@@ -229,13 +239,13 @@ const saveDeviceToken = async (userId, deviceToken) => {
     throw new Error('Error saving device token');
   }
 };
-
 const removeDeviceToken = async (userId, deviceToken) => {
   try {
     await pool.query(
-      `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
-      [userId, deviceToken]
-    );
+  `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
+  [userId, deviceToken]
+);
+
   } catch (error) {
     console.error('Error removing device token:', error);
     throw new Error('Failed to remove device token');
@@ -244,19 +254,18 @@ const removeDeviceToken = async (userId, deviceToken) => {
 const getUserProfileById = async (userId, withMetadata = true) => {
   try {
     const userRes = await pool.query(
-      `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
-      [userId]
-    );
-
-    if (userRes.rows.length === 0) return null;
+    `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
+     [userId]
+     );
+   if (userRes.rows.length === 0) return null;
 
     const user = userRes.rows[0];
 
     if (!withMetadata) return user;
 
     const metaRes = await pool.query(
-      `SELECT key, value FROM user_metadata WHERE user_id = $1`,
-      [userId]
+    `SELECT key, value FROM user_metadata WHERE user_id = $1`,
+    [userId]
     );
 
     const metadata = {};
@@ -271,6 +280,106 @@ const getUserProfileById = async (userId, withMetadata = true) => {
   } catch (err) {
     console.error(err);
     throw new Error('Error fetching user profile');
+  }
+};
+const updateProfilePicUrl = async (userId, imageUrl) => {
+  const query = `
+  INSERT INTO user_metadata (user_id, key, value)
+  VALUES ($1, 'profile_pic_url', $2)
+  ON CONFLICT (user_id, key)
+  DO UPDATE SET value = EXCLUDED.value
+`;
+  await pool.query(query, [userId, imageUrl]);
+};
+
+const addDocumentToMetadata = async (userId, newDoc) => {
+  try {
+    const res = await pool.query(
+      `SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'`,
+      [userId]
+    );
+
+    let docs = [];
+
+    if (res.rows.length > 0) {
+      const rawValue = res.rows[0].value;
+
+      try {
+        docs = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        if (!Array.isArray(docs)) {
+          docs = [];
+        }
+      } catch (parseErr) {
+        console.warn('Invalid documents metadata JSON, resetting to empty array');
+        docs = [];
+      }
+    }
+
+    docs.push(newDoc);
+
+    await pool.query(
+      `
+      INSERT INTO user_metadata (user_id, key, value)
+      VALUES ($1, 'documents', $2)
+      ON CONFLICT (user_id, key)
+      DO UPDATE SET value = EXCLUDED.value
+      `,
+      [userId, JSON.stringify(docs)]
+    );
+
+  } catch (err) {
+    console.error('Error in addDocumentToMetadata:', err);
+    throw new Error('Failed to update documents in metadata');
+  }
+};
+
+const removeDocumentFromMetadata = async (userId, documentName) => {
+  try {
+    const result = await pool.query(
+      `
+      UPDATE user_metadata
+      SET value = jsonb_set(
+        value::jsonb,
+        '{documents}',
+        COALESCE(
+          (
+            SELECT jsonb_agg(elem)
+            FROM jsonb_array_elements(
+              (value::jsonb ->> 'documents')::jsonb
+            ) elem
+            WHERE elem->>'name' != $2
+          ),
+          '[]'::jsonb
+        ),
+        true
+      )::text  -- cast back to text if your value column is text
+      WHERE user_id = $1 AND key = 'documents'
+      RETURNING *;
+      `,
+      [userId, documentName]
+    );
+
+    if (result.rowCount === 0) {
+      throw new Error('Document not found or user does not have documents metadata.');
+    }
+
+    return result.rows[0];
+  } catch (err) {
+    console.error('Error in removeDocumentFromMetadata:', err);
+    throw new Error('Error removing document from metadata');
+  }
+};
+const getUserDocuments = async (userId) => {
+  try {
+    const result = await pool.query(
+      `SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'`,
+      [userId]
+    );
+    if (result.rows.length === 0) return []
+    return JSON.parse(result.rows[0].value);
+  } catch (err) {
+    console.error('Error fetching user documents:', err);
+    throw new Error('Error fetching user documents');
   }
 };
 
@@ -290,5 +399,9 @@ module.exports = {
   getUsers,
   saveDeviceToken,
   removeDeviceToken,
-  getUserProfileById
+  getUserProfileById,
+  updateProfilePicUrl,
+  addDocumentToMetadata,
+  removeDocumentFromMetadata,
+  getUserDocuments
 };

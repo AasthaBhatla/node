@@ -4,7 +4,7 @@ const SECRET_KEY = process.env.JWT_SECRET || 'your-secret-key';
 
 const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-
+  
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authorization token missing or invalid' });
   }
