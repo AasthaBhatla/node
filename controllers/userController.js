@@ -11,61 +11,63 @@ const {
   removeDocumentFromMetadata,
   getUserDocuments,
   getUsers
-} = require('../services/userService'); // or correct path
+} = require('../services/userService');
 
 
 exports.getMe = async (req, res) => {
-  const userId = req.user.id;
+  const user_id = req.user.id;
 
   try {
-    const user = await getUserById(userId); 
+    const user = await getUserById(user_id); 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const metadata = await getUserMetadata(userId); 
+    const metadata = await getUserMetadata(user_id); 
     res.json({ ...user, metadata });
   } catch (err) {
     console.error('Get user error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 exports.updateMe = async (req, res) => {
-  const userId = req.user.id;
+  const user_id = req.user.id;
   const {
-    firstName,
-    middleName,
-    lastName,
+    first_name,
+    middle_name,
+    last_name,
     dob,
     gender,
     role
   } = req.body;
 
-  const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo'];
+  const allowed_genders = ['male', 'female', 'other'];
+  const allowed_roles = ['client', 'lawyer', 'expert', 'ngo'];
 
-  if (gender && !allowedGenders.includes(gender.toLowerCase())) {
+  if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
   }
 
-  if (role && !allowedRoles.includes(role.toLowerCase())) {
+  if (role && !allowed_roles.includes(role.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid role' });
   }
 
   try {
-    const user = await getUserById(userId);
+    const user = await getUserById(user_id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    await updateUserMetadata(userId, {
-      ...(firstName && { first_name: firstName }),
-      ...(middleName && { middle_name: middleName }),
-      ...(lastName && { last_name: lastName }),
+    await updateUserMetadata(user_id, {
+      ...(first_name && { first_name }),
+      ...(middle_name && { middle_name }),
+      ...(last_name && { last_name }),
       ...(dob && { dob }),
       ...(gender && { gender: gender.toLowerCase() })
     });
 
     if (role) {
-      await updateUserRole(userId, role.toLowerCase());
+      await updateUserRole(user_id, role.toLowerCase());
     }
 
     res.json({ message: 'Profile updated successfully' });
@@ -74,6 +76,8 @@ exports.updateMe = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 exports.getUsers = async (req, res) => {
   try {
     const {
@@ -81,15 +85,15 @@ exports.getUsers = async (req, res) => {
       status,
       count,
       page,
-      orderBy,
+      order_by,
       order,
       email,
       phone,
       search,
-      withMetadata
+      with_metadata
     } = req.query;
 
-    const metaQuery = req.query.metaQuery
+    const meta_query = req.query.metaQuery
       ? JSON.parse(req.query.metaQuery)
       : undefined;
 
@@ -98,13 +102,13 @@ exports.getUsers = async (req, res) => {
       status,
       count: parseInt(count) || 10,
       page: parseInt(page) || 1,
-      orderBy,
+      order_by,
       order,
       email,
       phone,
       search,
-      withMetadata: withMetadata === 'true',
-      metaQuery,
+      with_metadata: with_metadata === 'true',
+      meta_query,
     };
 
     const users = await getUsers(filters);
@@ -114,54 +118,65 @@ exports.getUsers = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
+
+
 exports.getUserById = async (req, res) => {
-  const userId = req.params.id;
+  const user_id = req.params.id;
 
   try {
-    const user = await getUserById(userId);
+    const user = await getUserById(user_id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const metadata = await getUserMetadata(userId); 
+    const metadata = await getUserMetadata(user_id); 
     res.json({ ...user, metadata });
   } catch (err) {
     console.error('Get user by ID error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 exports.updateUserMetaByAdmin = async (req, res) => {
-  const requestingUser = req.user;
-  const targetUserId = req.params.id;
-  const { firstName, middleName, lastName, dob, gender, role } = req.body;
+  const requesting_user = req.user;
+  const target_user_id = req.params.id;
+  const {
+    first_name,
+    middle_name,
+    last_name,
+    dob,
+    gender,
+    role
+  } = req.body;
 
-  const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
+  const allowed_genders = ['male', 'female', 'other'];
+  const allowed_roles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
 
-  if (gender && !allowedGenders.includes(gender.toLowerCase())) {
+  if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
   }
 
-  if (role && !allowedRoles.includes(role.toLowerCase())) {
+  if (role && !allowed_roles.includes(role.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid role' });
   }
 
   try {
-    if (requestingUser.role !== 'admin') {
+    if (requesting_user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can update other users\' metadata' });
     }
 
-    const user = await getUserById(targetUserId);
+    const user = await getUserById(target_user_id);
     if (!user) return res.status(404).json({ error: 'Target user not found' });
 
-    await updateUserMetadata(targetUserId, {
-      ...(firstName && { first_name: firstName }),
-      ...(middleName && { middle_name: middleName }),
-      ...(lastName && { last_name: lastName }),
+    await updateUserMetadata(target_user_id, {
+      ...(first_name && { first_name }),
+      ...(middle_name && { middle_name }),
+      ...(last_name && { last_name }),
       ...(dob && { dob }),
-      ...(gender && { gender: gender.toLowerCase() }),
+      ...(gender && { gender: gender.toLowerCase() })
     });
 
     if (role) {
-      await updateUserRole(targetUserId, role.toLowerCase());
+      await updateUserRole(target_user_id, role.toLowerCase());
     }
 
     res.json({ message: 'User metadata updated by admin successfully' });
@@ -170,29 +185,33 @@ exports.updateUserMetaByAdmin = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 exports.uploadProfilePic = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const user_id = req.user.id;
 
     if (!req.file) {
       return res.status(400).json({ error: 'Profile picture file is required' });
     }
 
-    const profilePicUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const profile_pic_url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-    await updateProfilePicUrl(userId, profilePicUrl);
+    await updateProfilePicUrl(user_id, profile_pic_url);
 
-    res.status(200).json({ message: 'Profile picture updated successfully', url: profilePicUrl });
+    res.status(200).json({ message: 'Profile picture updated successfully', url: profile_pic_url });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update profile picture' });
   }
 };
-exports.uploadDocument = async (req, res) => {
-  const userRole = req.user.role;
-  const allowedRoles = ['admin', 'lawyer', 'expert'];
 
-  if (!allowedRoles.includes(userRole)) {
+
+exports.uploadDocument = async (req, res) => {
+  const user_role = req.user.role;
+  const allowed_roles = ['admin', 'lawyer', 'expert'];
+
+  if (!allowed_roles.includes(user_role)) {
     return res.status(403).json({ error: 'Access denied. Only admin, lawyer, and expert can upload documents.' });
   }
 
@@ -200,59 +219,61 @@ exports.uploadDocument = async (req, res) => {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  const filePath = path.join('uploads', 'documents', req.file.filename);
-  const originalName = req.file.originalname;
+  const file_path = path.join('uploads', 'documents', req.file.filename);
+  const original_name = req.file.originalname;
 
   try {
     await addDocumentToMetadata(req.user.id, {
-      path: filePath,
-      name: originalName,
-      uploadedAt: new Date().toISOString()
+      path: file_path,
+      name: original_name,
+      uploaded_at: new Date().toISOString()
     });
 
     return res.status(200).json({
       message: 'Document uploaded successfully',
-      filePath
+      file_path
     });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to upload document' });
   }
 };
+
+
 exports.deleteDocument = async (req, res) => {
-  const userId = req.user.id;
+  const user_id = req.user.id;
   const name = req.params.name;
 
   try {
-    const metadata = await getUserMetadata(userId);
+    const metadata = await getUserMetadata(user_id);
     console.log("Fetched metadata:", metadata);
 
     let documents = [];
 
     try {
-      const outerParsed = JSON.parse(metadata.documents);
+      const outer_parsed = JSON.parse(metadata.documents);
 
-      documents = typeof outerParsed.documents === 'string'
-        ? JSON.parse(outerParsed.documents)
-        : outerParsed.documents;
+      documents = typeof outer_parsed.documents === 'string'
+        ? JSON.parse(outer_parsed.documents)
+        : outer_parsed.documents;
 
     } catch (err) {
       console.error("Failed to parse documents JSON:", err);
       return res.status(500).json({ error: 'Invalid document metadata format' });
     }
 
-    const docToDelete = documents.find(doc => doc.name === name);
-    if (!docToDelete) {
+    const doc_to_delete = documents.find(doc => doc.name === name);
+    if (!doc_to_delete) {
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    await removeDocumentFromMetadata(userId, name);
+    await removeDocumentFromMetadata(user_id, name);
 
-    const fullPath = path.join(__dirname, '..', '..', docToDelete.path);
-    console.log("Deleting file at:", fullPath);
+    const full_path = path.join(__dirname, '..', '..', doc_to_delete.path);
+    console.log("Deleting file at:", full_path);
 
     try {
-      await fs.promises.unlink(fullPath);
+      await fs.promises.unlink(full_path);
     } catch (err) {
       console.warn('Failed to delete file from disk:', err.message);
     }
@@ -264,19 +285,21 @@ exports.deleteDocument = async (req, res) => {
     return res.status(500).json({ error: 'Failed to delete document' });
   }
 };
+
+
 exports.listUserDocuments = async (req, res) => {
-  const userId = req.user.id;
+  const user_id = req.user.id;
 
   try {
-    const user = await getUserById(userId);
+    const user = await getUserById(user_id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const allowedRoles = ['admin', 'lawyer', 'expert'];
-    if (!allowedRoles.includes(user.role)) {
+    const allowed_roles = ['admin', 'lawyer', 'expert'];
+    if (!allowed_roles.includes(user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const documents = await getUserDocuments(userId);
+    const documents = await getUserDocuments(user_id);
     return res.status(200).json({ documents });
 
   } catch (err) {
@@ -284,4 +307,3 @@ exports.listUserDocuments = async (req, res) => {
     return res.status(500).json({ error: 'Failed to list documents' });
   }
 };
-

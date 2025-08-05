@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const requestController = require('../controllers/requestController');
-const authMiddleware = require('../middleware/auth'); 
+const requestController = require('../controllers/requestController'); 
 
-router.use(authMiddleware); // ensures req.user is populated from JWT
 
-router.post('/', requestController.insertRequest);
+router.post('/requests', requestController.insertRequest);
 router.get('/my', requestController.getRequestsByUser);
 router.get('/categories', requestController.getAllRequestCategories);
 router.get('/:id', requestController.getRequestById);

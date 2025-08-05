@@ -1,32 +1,15 @@
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
-const {
-  normalizePhone,
-  getUserByEmailOrPhone,
-  insertUser,
-  setOtp,
-  verifyOtp,
-  clearOtp,
-  updateUserMetadata,
-  getUserMetadata,
-  markUserAsRegistered,
-  updateUserRole,
-  saveDeviceToken,
-  removeDeviceToken,
-  getUserById
-} = require('../services/userService');
+const { normalizePhone, getUserByEmailOrPhone, insertUser, setOtp, verifyOtp, clearOtp, updateUserMetadata, getUserMetadata, markUserAsRegistered, updateUserRole, saveDeviceToken, removeDeviceToken, getUserById,updateUser } = require('../services/userService');
 
 exports.login = async (req, res) => {
-  const { email, phone: rawPhone, deviceToken } = req.body;
-  const phone = normalizePhone(rawPhone);
+  const { email, phone: raw_phone, device_token } = req.body;
+  const phone = normalizePhone(raw_phone);
 
   if (!email && !phone) {
     return res.status(400).json({ error: 'Provide email or phone' });
   }
 
-  if (!deviceToken) {
+  if (!device_token) {
     return res.status(400).json({ error: 'Device token is required' });
   }
 
@@ -34,12 +17,12 @@ exports.login = async (req, res) => {
     let user = await getUserByEmailOrPhone(email, phone);
     if (!user) user = await insertUser(email, phone);
 
-    await saveDeviceToken(user.id, deviceToken); 
+    await saveDeviceToken(user.id, device_token);
 
     const otp = await setOtp(user.id);
     console.log(`OTP sent to ${email || phone}: ${otp}`);
 
-    res.json({ message: 'OTP sent', deviceToken, status: user.status });
+    res.json({ message: 'OTP sent', status: user.status });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -47,8 +30,8 @@ exports.login = async (req, res) => {
 };
 
 exports.verifyOtp = async (req, res) => {
-  const { email, phone: rawPhone, otp } = req.body;
-  const phone = normalizePhone(rawPhone);
+  const { email, phone: raw_phone, otp } = req.body;
+  const phone = normalizePhone(raw_phone);
 
   if (!otp || (!email && !phone)) {
     return res.status(400).json({ error: 'OTP and email/phone required' });
@@ -71,7 +54,7 @@ exports.verifyOtp = async (req, res) => {
     res.json({
       message: 'OTP verified',
       token,
-      userId: user.id,
+      user_id: user.id,
       status: user.status
     });
   } catch (err) {
@@ -82,26 +65,30 @@ exports.verifyOtp = async (req, res) => {
 
 exports.register = async (req, res) => {
   const {
-    firstName,
-    middleName,
-    lastName,
+    first_name,
+    middle_name,
+    last_name,
     dob,
     gender,
-    role
+    role,
+    email,
+    phone: raw_phone
   } = req.body;
 
-  const allowedGenders = ['male', 'female', 'other'];
-  const allowedRoles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
+  const phone = normalizePhone(raw_phone);
 
-  if (!firstName || !lastName || !dob || !gender || !role) {
+  const allowed_genders = ['male', 'female', 'other'];
+  const allowed_roles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
+
+  if (!first_name || !last_name || !dob || !gender || !role) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  if (!allowedGenders.includes(gender.toLowerCase())) {
+  if (!allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
   }
 
-  if (!allowedRoles.includes(role.toLowerCase())) {
+  if (!allowed_roles.includes(role.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid role' });
   }
 
@@ -111,16 +98,40 @@ exports.register = async (req, res) => {
       return res.status(403).json({ error: 'User not found' });
     }
 
+    const existingUser = await getUserById(user.id);
+    if (!existingUser.email && email) {
+      const emailCheck = await getUserByEmailOrPhone(email, null);
+      if (emailCheck && emailCheck.id !== user.id) {
+        return res.status(409).json({ error: 'Email already in use' });
+      }
+    }
+
+    if (!existingUser.phone && phone) {
+      const phoneCheck = await getUserByEmailOrPhone(null, phone);
+      if (phoneCheck && phoneCheck.id !== user.id) {
+        return res.status(409).json({ error: 'Phone number already in use' });
+      }
+    }
+
+    const userUpdateFields = {};
+    if (!existingUser.email && email) userUpdateFields.email = email;
+    if (!existingUser.phone && phone) userUpdateFields.phone = phone;
+
+    if (Object.keys(userUpdateFields).length > 0) {
+      await updateUser(user.id, userUpdateFields);
+    }
+
     await updateUserMetadata(user.id, {
-      first_name: firstName,
-      middle_name: middleName || '',
-      last_name: lastName,
+      first_name,
+      middle_name: middle_name || '',
+      last_name,
       dob,
       gender
     });
-    await updateUserRole(user.id, role.toLowerCase());
 
-    await markUserAsRegistered(user.id); 
+    await updateUserRole(user.id, role.toLowerCase());
+    await markUserAsRegistered(user.id);
+
     return res.status(200).json({ message: 'Registration completed successfully' });
 
   } catch (err) {
@@ -130,32 +141,34 @@ exports.register = async (req, res) => {
 };
 
 exports.logout = async (req, res) => {
-  const { deviceToken } = req.body;
+  const { device_token } = req.body;
 
-  if (!deviceToken) {
+  if (!device_token) {
     return res.status(400).json({ error: 'Device token is required' });
   }
 
   try {
-    const userId = req.user.id;
-    await removeDeviceToken(userId, deviceToken);
+    const user_id = req.user.id;
+    const deleted = await removeDeviceToken(user_id, device_token);
+
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Device token not found' });
+    }
+
     return res.json({ message: 'Logout successful' });
   } catch (err) {
     console.error(err);
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
 
+
 exports.resendOtp = async (req, res) => {
-  const { email, phone: rawPhone, deviceToken } = req.body;
-  const phone = normalizePhone(rawPhone);
+  const { email, phone: raw_phone, device_token } = req.body;
+  const phone = normalizePhone(raw_phone);
 
   if (!email && !phone) {
     return res.status(400).json({ error: 'Provide email or phone' });
-  }
-
-  if (!deviceToken) {
-    return res.status(400).json({ error: 'Device token is required' });
   }
 
   try {
@@ -164,14 +177,12 @@ exports.resendOtp = async (req, res) => {
       user = await insertUser(email, phone);
     }
 
-    await saveDeviceToken(user.id, deviceToken); // Save the provided device token
-
     const otp = await setOtp(user.id);
     console.log(`OTP resent to ${email || phone}: ${otp}`);
 
     res.json({
       message: 'OTP resent successfully',
-      deviceToken,
+      device_token,
       status: user.status,
     });
   } catch (err) {
@@ -179,3 +190,4 @@ exports.resendOtp = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+

@@ -60,7 +60,6 @@ const clearOtp = async (userId) => {
   }
 };
 
-// userService.js
 const markUserAsRegistered = async (userId) => {
   console.log('Updating status for:', userId);
   try {
@@ -68,9 +67,7 @@ const markUserAsRegistered = async (userId) => {
       `UPDATE users SET status = 'registered' WHERE id = $1`,
       [userId]
     );
-    console.log('Update result:', result.rowCount); // Should be 1
   } catch (err) {
-    console.error('Error in markUserAsRegistered:', err);
     throw new Error('Error marking user as registered');
   }
 };
@@ -241,16 +238,17 @@ const saveDeviceToken = async (userId, deviceToken) => {
 };
 const removeDeviceToken = async (userId, deviceToken) => {
   try {
-    await pool.query(
-  `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
-  [userId, deviceToken]
-);
-
+    const result = await pool.query(
+      `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
+      [userId, deviceToken]
+    );
+    return result.rowCount; 
   } catch (error) {
     console.error('Error removing device token:', error);
     throw new Error('Failed to remove device token');
   }
 };
+
 const getUserProfileById = async (userId, withMetadata = true) => {
   try {
     const userRes = await pool.query(
@@ -382,7 +380,32 @@ const getUserDocuments = async (userId) => {
     throw new Error('Error fetching user documents');
   }
 };
+const updateUser = async (userId, fields) => {
+  const updates = [];
+  const values = [];
 
+  if (fields.email) {
+    updates.push(`email = $${values.length + 1}`);
+    values.push(fields.email);
+  }
+
+  if (fields.phone) {
+    updates.push(`phone = $${values.length + 1}`);
+    values.push(fields.phone);
+  }
+
+  if (updates.length === 0) return;
+
+  values.push(userId);
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length}`;
+
+  try {
+    await pool.query(query, values);
+  } catch (err) {
+    console.error('Error updating user:', err);
+    throw err; 
+  }
+};
 
 module.exports = {
   normalizePhone,
@@ -403,5 +426,6 @@ module.exports = {
   updateProfilePicUrl,
   addDocumentToMetadata,
   removeDocumentFromMetadata,
-  getUserDocuments
+  getUserDocuments,
+  updateUser
 };
