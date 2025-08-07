@@ -9,7 +9,7 @@ const uploadDocument = getUpload('document');
 
 router.get('/me', authMiddleware, userController.getMe);
 router.post('/me', authMiddleware, userController.updateMe);
-router.get('/', authMiddleware, userController.getUsers);
+router.post('/', authMiddleware, userController.getUsers);
 router.get('/:id', authMiddleware, userController.getUserById);
 router.post('/:id/update-meta', authMiddleware, userController.updateUserMetaByAdmin);
 

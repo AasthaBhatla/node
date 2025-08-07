@@ -7,10 +7,12 @@ app.use(express.json());
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const requestRoutes = require("./routes/requestRoutes");
+const taxonomyRoutes = require("./routes/taxonomyRoutes"); // <-- Add this too if needed
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/requests", requestRoutes);
+app.use("/taxonomies", taxonomyRoutes); // <-- Mount taxonomy routes here
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

@@ -35,7 +35,10 @@ const insertUser = async (email, phone) => {
 const setOtp = async (userId) => {
   try {
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    await pool.query(`UPDATE users SET otp = $1 WHERE id = $2`, [otp, userId]);
+    await pool.query(
+      `UPDATE users SET otp = $1 WHERE id = $2`,
+      [otp, userId]
+    );
     return otp;
   } catch (err) {
     throw new Error('Error setting OTP');
@@ -44,7 +47,10 @@ const setOtp = async (userId) => {
 
 const verifyOtp = async (userId, otp) => {
   try {
-    const result = await pool.query(`SELECT otp FROM users WHERE id = $1`, [userId]);
+    const result = await pool.query(
+      `SELECT otp FROM users WHERE id = $1`,
+      [userId]
+    );
     const user = result.rows[0];
     return user && user.otp === otp;
   } catch (err) {
@@ -54,16 +60,18 @@ const verifyOtp = async (userId, otp) => {
 
 const clearOtp = async (userId) => {
   try {
-    await pool.query(`UPDATE users SET otp = NULL WHERE id = $1`, [userId]);
+    await pool.query(
+      `UPDATE users SET otp = NULL WHERE id = $1`,
+      [userId]
+    );
   } catch (err) {
     throw new Error('Error clearing OTP');
   }
 };
 
 const markUserAsRegistered = async (userId) => {
-  console.log('Updating status for:', userId);
   try {
-    const result = await pool.query(
+    await pool.query(
       `UPDATE users SET status = 'registered' WHERE id = $1`,
       [userId]
     );
@@ -78,22 +86,22 @@ const updateUserMetadata = async (userId, metadata) => {
     for (const [key, value] of Object.entries(metadata)) {
       if (key === 'role') continue;
       await pool.query(
-        `INSERT INTO user_metadata (user_id, "key", value)
+        `INSERT INTO user_metadata (user_id, key, value)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
         [userId, key, value]
       );
     }
   } catch (err) {
-  console.error('Error in updateUserMetadata:', err);
-  throw new Error('Error updating user metadata');
+    console.error('Error in updateUserMetadata:', err);
+    throw new Error('Error updating user metadata');
   }
 };
 
 const getUserMetadata = async (userId) => {
   try {
     const result = await pool.query(
-      `SELECT "key", value FROM user_metadata WHERE user_id = $1`,
+      `SELECT key, value FROM user_metadata WHERE user_id = $1`,
       [userId]
     );
     const metadata = {};
@@ -108,7 +116,10 @@ const getUserMetadata = async (userId) => {
 
 const updateUserRole = async (userId, role) => {
   try {
-    await pool.query(`UPDATE users SET role = $1 WHERE id = $2`, [role, userId]);
+    await pool.query(
+      `UPDATE users SET role = $1 WHERE id = $2`,
+      [role, userId]
+    );
   } catch (err) {
     console.error('Error in updateUserRole:', err);
     throw new Error('Error updating user role');
@@ -116,11 +127,15 @@ const updateUserRole = async (userId, role) => {
 };
 
 const getUserById = async (userId) => {
-  const result = await pool.query(
-    `SELECT email, phone, status, role FROM users WHERE id = $1`,
-    [userId]
-  );
-  return result.rows[0];
+  try {
+    const result = await pool.query(
+      `SELECT id, email, phone, status, role FROM users WHERE id = $1`,
+      [userId]
+    );
+    return result.rows[0];
+  } catch (err) {
+    throw new Error('Error fetching user by ID');
+  }
 };
 
 const getUsers = async (filters = {}) => {
@@ -162,8 +177,6 @@ const getUsers = async (filters = {}) => {
 
   if (metaQuery?.conditions?.length) {
     const logic = metaQuery.relation?.toUpperCase() === 'OR' ? 'OR' : 'AND';
-    const metaConditions = [];
-
     metaQuery.conditions.forEach(({ key, value }, index) => {
       const alias = `um_meta_${index}`;
       joins += ` JOIN user_metadata ${alias} ON ${alias}.user_id = u.id AND ${alias}.key = $${i++} AND ${alias}.value = $${i++}`;
@@ -236,13 +249,14 @@ const saveDeviceToken = async (userId, deviceToken) => {
     throw new Error('Error saving device token');
   }
 };
+
 const removeDeviceToken = async (userId, deviceToken) => {
   try {
     const result = await pool.query(
       `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
       [userId, deviceToken]
     );
-    return result.rowCount; 
+    return result.rowCount;
   } catch (error) {
     console.error('Error removing device token:', error);
     throw new Error('Failed to remove device token');
@@ -252,18 +266,19 @@ const removeDeviceToken = async (userId, deviceToken) => {
 const getUserProfileById = async (userId, withMetadata = true) => {
   try {
     const userRes = await pool.query(
-    `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
-     [userId]
-     );
-   if (userRes.rows.length === 0) return null;
+      `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (userRes.rows.length === 0) return null;
 
     const user = userRes.rows[0];
 
     if (!withMetadata) return user;
 
     const metaRes = await pool.query(
-    `SELECT key, value FROM user_metadata WHERE user_id = $1`,
-    [userId]
+      `SELECT key, value FROM user_metadata WHERE user_id = $1`,
+      [userId]
     );
 
     const metadata = {};
@@ -271,23 +286,21 @@ const getUserProfileById = async (userId, withMetadata = true) => {
       metadata[key] = value;
     });
 
-    return {
-      ...user,
-      metadata
-    };
+    return { ...user, metadata };
   } catch (err) {
     console.error(err);
     throw new Error('Error fetching user profile');
   }
 };
+
 const updateProfilePicUrl = async (userId, imageUrl) => {
-  const query = `
-  INSERT INTO user_metadata (user_id, key, value)
-  VALUES ($1, 'profile_pic_url', $2)
-  ON CONFLICT (user_id, key)
-  DO UPDATE SET value = EXCLUDED.value
-`;
-  await pool.query(query, [userId, imageUrl]);
+  await pool.query(
+    `INSERT INTO user_metadata (user_id, key, value)
+     VALUES ($1, 'profile_pic_url', $2)
+     ON CONFLICT (user_id, key)
+     DO UPDATE SET value = EXCLUDED.value`,
+    [userId, imageUrl]
+  );
 };
 
 const addDocumentToMetadata = async (userId, newDoc) => {
@@ -301,14 +314,10 @@ const addDocumentToMetadata = async (userId, newDoc) => {
 
     if (res.rows.length > 0) {
       const rawValue = res.rows[0].value;
-
       try {
         docs = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
-        if (!Array.isArray(docs)) {
-          docs = [];
-        }
-      } catch (parseErr) {
-        console.warn('Invalid documents metadata JSON, resetting to empty array');
+        if (!Array.isArray(docs)) docs = [];
+      } catch {
         docs = [];
       }
     }
@@ -316,26 +325,23 @@ const addDocumentToMetadata = async (userId, newDoc) => {
     docs.push(newDoc);
 
     await pool.query(
-      `
-      INSERT INTO user_metadata (user_id, key, value)
-      VALUES ($1, 'documents', $2)
-      ON CONFLICT (user_id, key)
-      DO UPDATE SET value = EXCLUDED.value
-      `,
+      `INSERT INTO user_metadata (user_id, key, value)
+       VALUES ($1, 'documents', $2)
+       ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
       [userId, JSON.stringify(docs)]
     );
 
   } catch (err) {
     console.error('Error in addDocumentToMetadata:', err);
-    throw new Error('Failed to update documents in metadata');
+    throw new Error('Failed to add document to metadata');
   }
 };
 
 const removeDocumentFromMetadata = async (userId, documentName) => {
   try {
     const result = await pool.query(
-      `
-      UPDATE user_metadata
+      
+     `UPDATE user_metadata
       SET value = jsonb_set(
         value::jsonb,
         '{documents}',
@@ -352,8 +358,7 @@ const removeDocumentFromMetadata = async (userId, documentName) => {
         true
       )::text  -- cast back to text if your value column is text
       WHERE user_id = $1 AND key = 'documents'
-      RETURNING *;
-      `,
+      RETURNING *;`,
       [userId, documentName]
     );
 
@@ -367,11 +372,12 @@ const removeDocumentFromMetadata = async (userId, documentName) => {
     throw new Error('Error removing document from metadata');
   }
 };
+
 const getUserDocuments = async (userId) => {
   try {
     const result = await pool.query(
-      `SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'`,
-      [userId]
+       "SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'",
+       [userId]
     );
     if (result.rows.length === 0) return []
     return JSON.parse(result.rows[0].value);
@@ -425,7 +431,7 @@ module.exports = {
   getUserProfileById,
   updateProfilePicUrl,
   addDocumentToMetadata,
-  removeDocumentFromMetadata,
   getUserDocuments,
-  updateUser
+  updateUser,
+  removeDocumentFromMetadata
 };

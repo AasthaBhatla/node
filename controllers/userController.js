@@ -34,45 +34,28 @@ exports.getMe = async (req, res) => {
 
 exports.updateMe = async (req, res) => {
   const user_id = req.user.id;
-  const {
-    first_name,
-    middle_name,
-    last_name,
-    dob,
-    gender,
-    role
-  } = req.body;
+  const { gender, ...otherMetadata } = req.body;
 
   const allowed_genders = ['male', 'female', 'other'];
-  const allowed_roles = ['client', 'lawyer', 'expert', 'ngo'];
 
   if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
-  }
-
-  if (role && !allowed_roles.includes(role.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid role' });
   }
 
   try {
     const user = await getUserById(user_id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    await updateUserMetadata(user_id, {
-      ...(first_name && { first_name }),
-      ...(middle_name && { middle_name }),
-      ...(last_name && { last_name }),
-      ...(dob && { dob }),
+    const metadataUpdates = {
+      ...otherMetadata,
       ...(gender && { gender: gender.toLowerCase() })
-    });
+    };
 
-    if (role) {
-      await updateUserRole(user_id, role.toLowerCase());
-    }
+    await updateUserMetadata(user_id, metadataUpdates);
 
-    res.json({ message: 'Profile updated successfully' });
+    res.json({ message: 'Profile metadata updated successfully' });
   } catch (err) {
-    console.error('Update user profile error:', err);
+    console.error('Update user metadata error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -90,12 +73,9 @@ exports.getUsers = async (req, res) => {
       email,
       phone,
       search,
-      with_metadata
-    } = req.query;
-
-    const meta_query = req.query.metaQuery
-      ? JSON.parse(req.query.metaQuery)
-      : undefined;
+      with_metadata,
+      metaQuery
+    } = req.body;
 
     const filters = {
       role,
@@ -107,8 +87,8 @@ exports.getUsers = async (req, res) => {
       email,
       phone,
       search,
-      with_metadata: with_metadata === 'true',
-      meta_query,
+      with_metadata: with_metadata === true || with_metadata === 'true',
+      meta_query: metaQuery,
     };
 
     const users = await getUsers(filters);

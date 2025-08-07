@@ -1,7 +1,7 @@
 const requestService = require('../services/requestService');
 
 exports.insertRequest = async (req, res) => {
-  if (req.user.role !== 'Client') {
+  if (req.user.role !== 'client') {
     return res.status(403).json({ error: 'Only clients can create requests' });
   }
 
