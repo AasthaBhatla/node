@@ -62,11 +62,27 @@ const getTermsByTaxonomySlug = async (slug) => {
     throw new Error('Error fetching terms by taxonomy slug');
   }
 };
+const updateTermByTaxonomyId = async (taxonomyId, slug, title) => {
+  try {
+    const result = await pool.query(
+      `UPDATE terms 
+       SET slug = $2, title = $3 
+       WHERE taxonomy_id = $1 
+       RETURNING *`,
+      [taxonomyId, slug, title]
+    );
+    return result.rows;
+  } catch (err) {
+    throw new Error('Error updating term by taxonomy ID');
+  }
+};
+
 
 module.exports = {
   createTerm,
   getTermById,
   getTermBySlug,
   getTermsByTaxonomyId,
-  getTermsByTaxonomySlug
+  getTermsByTaxonomySlug,
+  updateTermByTaxonomyId
 };

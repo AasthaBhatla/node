@@ -7,4 +7,5 @@ taxonomyRouter.get('/', taxonomyController.getAll);
 taxonomyRouter.get('/:id', taxonomyController.getById);
 taxonomyRouter.post('/', authMiddleware, taxonomyController.create);
 taxonomyRouter.post('/:id', authMiddleware, taxonomyController.update);
+
 module.exports = taxonomyRouter;
