@@ -31,7 +31,7 @@ exports.getById = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const user = req.user;
-    if (user.role !== 'Admin') {
+    if (user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
@@ -47,7 +47,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const user = req.user;
-    if (user.role !== 'Admin') {
+    if (user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 

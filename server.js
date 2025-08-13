@@ -9,12 +9,14 @@ const userRoutes = require("./routes/users");
 const requestRoutes = require("./routes/requestRoutes");
 const taxonomyRoutes = require("./routes/taxonomy"); 
 const termsRoutes = require("./routes/termsRoutes");
+const partnerRoutes = require('./routes/partnerRoutes');
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/requests", requestRoutes);
 app.use("/taxonomies", taxonomyRoutes); 
 app.use("/terms", termsRoutes);
+app.use('/partners', partnerRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

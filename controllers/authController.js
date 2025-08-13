@@ -87,7 +87,6 @@ exports.register = async (req, res) => {
   if (!allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
   }
-
   if (!allowed_roles.includes(role.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid role' });
   }
@@ -99,6 +98,7 @@ exports.register = async (req, res) => {
     }
 
     const existingUser = await getUserById(user.id);
+
     if (!existingUser.email && email) {
       const emailCheck = await getUserByEmailOrPhone(email, null);
       if (emailCheck && emailCheck.id !== user.id) {
@@ -116,18 +116,26 @@ exports.register = async (req, res) => {
     const userUpdateFields = {};
     if (!existingUser.email && email) userUpdateFields.email = email;
     if (!existingUser.phone && phone) userUpdateFields.phone = phone;
-
     if (Object.keys(userUpdateFields).length > 0) {
       await updateUser(user.id, userUpdateFields);
     }
 
-    await updateUserMetadata(user.id, {
+    const baseMetadata = {
       first_name,
       middle_name: middle_name || '',
       last_name,
       dob,
       gender
-    });
+    };
+
+    const extraMetadata = {};
+    for (let key in req.body) {
+      if (!['first_name', 'middle_name', 'last_name', 'dob', 'gender', 'role', 'email', 'phone'].includes(key)) {
+        extraMetadata[key] = req.body[key];
+      }
+    }
+
+    await updateUserMetadata(user.id, { ...baseMetadata, ...extraMetadata });
 
     await updateUserRole(user.id, role.toLowerCase());
     await markUserAsRegistered(user.id);

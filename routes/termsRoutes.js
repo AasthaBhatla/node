@@ -4,8 +4,8 @@ const termsController = require('../controllers/termsController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 termsRouter.get('/taxonomy/:id/terms', termsController.getTermsByTaxonomyId);  
-termsRouter.get('/terms/:id', termsController.getTermById);                    
-termsRouter.post('/terms', authMiddleware, termsController.create);          
-termsRouter.post('/terms/:id', authMiddleware, termsController.updateByTaxonomyId);      
+termsRouter.get('/:id', termsController.getTermById);                    
+termsRouter.post('/', authMiddleware, termsController.create);          
+termsRouter.post('/:id', authMiddleware, termsController.updateByTaxonomyId);      
 
 module.exports = termsRouter;
