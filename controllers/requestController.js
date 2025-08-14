@@ -1,11 +1,10 @@
 const requestService = require('../services/requestService');
 
 exports.insertRequest = async (req, res) => {
-  if (req.user.role !== 'client') {
-    return res.status(403).json({ error: 'Only clients can create requests' });
-  }
-
   try {
+    if (!['client', 'admin'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const data = { ...req.body, client_id: req.user.id };
     const request = await requestService.insertRequest(data);
     res.status(201).json(request);
@@ -17,6 +16,9 @@ exports.insertRequest = async (req, res) => {
 
 exports.getRequestsByUser = async (req, res) => {
   try {
+    if (!['client', 'admin', 'lawyer', 'expert'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const requests = await requestService.getRequestsByUser(req.user.id);
     res.json(requests);
   } catch (err) {
@@ -26,29 +28,25 @@ exports.getRequestsByUser = async (req, res) => {
 };
 
 exports.getRequestById = async (req, res) => {
-  const { id } = req.params;
-
-  if (!['Admin', 'Partner'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
   try {
-    const request = await requestService.getRequestById(id);
+    if (!['client', 'admin', 'lawyer', 'expert'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const request = await requestService.getRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: 'Request not found' });
     res.json(request);
   } catch (err) {
     console.error('Get request by ID error:', err);
     res.status(500).json({ error: 'Failed to fetch request' });
   }
 };
+
 exports.updateRequestById = async (req, res) => {
-  const { id } = req.params;
-
-  if (!['Admin', 'Client'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
   try {
-    const updated = await requestService.updateRequestById(id, req.body);
+    if (!['client', 'admin'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const updated = await requestService.updateRequestById(req.params.id, req.body);
     res.json(updated);
   } catch (err) {
     console.error('Update request error:', err);
@@ -57,14 +55,19 @@ exports.updateRequestById = async (req, res) => {
 };
 
 exports.assignPartner = async (req, res) => {
-  if (req.user.role !== 'Admin') {
-    return res.status(403).json({ error: 'Only admins can assign requests' });
-  }
-
   try {
-    const { request_id, partner_id } = req.body;
-    const assigned = await requestService.assignPartner(request_id, partner_id);
+    if (req.user.role.toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id, partner_id } = req.body;
+    if (!id || !partner_id) {
+      return res.status(400).json({ error: 'id and partner_id are required' });
+    }
+
+    const assigned = await requestService.assignPartner(id, partner_id);
     res.json(assigned);
+
   } catch (err) {
     console.error('Assign partner error:', err);
     res.status(500).json({ error: 'Failed to assign partner' });
@@ -72,14 +75,26 @@ exports.assignPartner = async (req, res) => {
 };
 
 exports.acceptRequest = async (req, res) => {
-  if (req.user.role !== 'Partner') {
-    return res.status(403).json({ error: 'Only partners can accept requests' });
-  }
-
   try {
-    const { request_id } = req.body;
-    const accepted = await requestService.acceptRequest(request_id, req.user.id);
-    res.json(accepted);
+    if (!['lawyer', 'expert'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.body;
+    const accepted = await requestService.acceptRequest(id, req.user.id);
+
+    if (accepted) {
+      return res.status(200).json({
+        success: true,
+        message: 'Request accepted successfully',
+        affectedRows: accepted
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'No matching request found or already accepted'
+      });
+    }
   } catch (err) {
     console.error('Accept request error:', err);
     res.status(500).json({ error: 'Failed to accept request' });
@@ -87,14 +102,34 @@ exports.acceptRequest = async (req, res) => {
 };
 
 exports.rejectRequest = async (req, res) => {
-  if (req.user.role !== 'Partner') {
-    return res.status(403).json({ error: 'Only partners can reject requests' });
-  }
-
   try {
-    const { request_id } = req.body;
-    const rejected = await requestService.rejectRequest(request_id, req.user.id);
-    res.json(rejected);
+    if (!req.user || !req.user.role || !req.user.id) {
+      return res.status(401).json({ error: 'Unauthorized: missing user information' });
+    }
+
+    if (!['lawyer', 'expert'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ error: 'Request ID is required' });
+    }
+
+    const rejected = await requestService.rejectRequest(id,req.user.id);
+
+    if (rejected) {
+      return res.status(200).json({
+        success: true,
+        message: 'Request rejected successfully',
+        data: rejected
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'Request not found or already rejected'
+      });
+    }
   } catch (err) {
     console.error('Reject request error:', err);
     res.status(500).json({ error: 'Failed to reject request' });
@@ -102,14 +137,11 @@ exports.rejectRequest = async (req, res) => {
 };
 
 exports.updateStatus = async (req, res) => {
-  const { id } = req.params;
-
-  if (!['Partner', 'Admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
   try {
-    const updated = await requestService.updateStatus(id, req.body.status);
+    if (!['admin', 'lawyer', 'expert'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const updated = await requestService.updateStatus(req.params.id, req.body.status);
     res.json(updated);
   } catch (err) {
     console.error('Update status error:', err);
@@ -128,14 +160,11 @@ exports.getAllRequestCategories = async (req, res) => {
 };
 
 exports.deleteRequest = async (req, res) => {
-  const { id } = req.params;
-
-  if (!['Admin', 'Client'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
   try {
-    const deleted = await requestService.deleteRequest(id);
+    if (!['client', 'admin'].includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const deleted = await requestService.deleteRequest(req.params.id);
     res.json({ message: 'Request deleted successfully', result: deleted });
   } catch (err) {
     console.error('Delete request error:', err);

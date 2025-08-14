@@ -1,6 +1,5 @@
 const db = require('../db');
 
-
 async function insertRequest(data) {
   const { client_id, partner_id, title, description, category_id } = data;
   const result = await db.query(
@@ -53,28 +52,32 @@ async function updateRequestById(id, updates) {
   return result.rows[0];
 }
 
-async function assignPartner(requestId, partnerId) {
+async function assignPartner(id, partnerId) {
   const result = await db.query(
-    `UPDATE requests SET partner_id = $1 WHERE id = $2 RETURNING *`,
-    [partnerId, requestId]
+    `UPDATE requests 
+     SET partner_id = $1, updated_at = CURRENT_TIMESTAMP 
+     WHERE id = $2 RETURNING *`,
+    [partnerId, id]
   );
   return result.rows[0];
 }
 
-async function acceptRequest(requestId) {
+
+async function acceptRequest(requestId, partnerId) {
   const result = await db.query(
-    `UPDATE requests SET status = 'accepted', replied_at = CURRENT_TIMESTAMP
+    `UPDATE requests 
+     SET status = 'accepted', partner_id = $2, replied_at = CURRENT_TIMESTAMP
      WHERE id = $1 RETURNING *`,
-    [requestId]
+    [requestId, partnerId]
   );
   return result.rows[0];
 }
 
-async function rejectRequest(requestId) {
+async function rejectRequest(requestId,partnerId) {
   const result = await db.query(
-    `UPDATE requests SET status = 'rejected', replied_at = CURRENT_TIMESTAMP
+    `UPDATE requests SET status = 'rejected', partner_id = $2, replied_at = CURRENT_TIMESTAMP
      WHERE id = $1 RETURNING *`,
-    [requestId]
+    [requestId,partnerId]
   );
   return result.rows[0];
 }
