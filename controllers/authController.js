@@ -189,9 +189,7 @@ exports.resendOtp = async (req, res) => {
     console.log(`OTP resent to ${email || phone}: ${otp}`);
 
     res.json({
-      message: 'OTP resent successfully',
-      device_token,
-      status: user.status,
+      message: 'OTP resent successfully'
     });
   } catch (err) {
     console.error('Resend OTP Error:', err);

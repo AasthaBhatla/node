@@ -42,7 +42,7 @@ const getTermsByTaxonomyId = async (taxonomyId) => {
       `SELECT * FROM terms WHERE taxonomy_id = $1`,
       [taxonomyId]
     );
-    return result.rows[0];
+    return result.rows;
   } catch (err) {
     throw new Error('Error fetching terms by taxonomy ID');
   }

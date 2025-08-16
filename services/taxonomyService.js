@@ -8,7 +8,8 @@ const createTaxonomy = async (slug, title) => {
     );
     return result.rows[0];
   } catch (err) {
-    throw new Error('Error creating taxonomy');
+    console.error('DB Error creating taxonomy:', err); 
+    throw err; 
   }
 };
 
