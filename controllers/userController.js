@@ -10,7 +10,10 @@ const {
   addDocumentToMetadata,
   removeDocumentFromMetadata,
   getUserDocuments,
-  getUsers
+  getUsers,
+  updateUserLanguage,
+  addUserTerms,
+  removeUserTerms
 } = require('../services/userService');
 
 
@@ -31,15 +34,26 @@ exports.getMe = async (req, res) => {
   }
 };
 
-
 exports.updateMe = async (req, res) => {
   const user_id = req.user.id;
-  const { gender, ...otherMetadata } = req.body;
+  const { gender, language_id, add_terms, remove_terms, ...otherMetadata } = req.body;
 
   const allowed_genders = ['male', 'female', 'other'];
 
   if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
+  }
+
+  if (language_id && typeof language_id !== 'number') {
+    return res.status(400).json({ error: 'language_id must be a number' });
+  }
+
+  if (add_terms && !Array.isArray(add_terms)) {
+    return res.status(400).json({ error: 'add_terms must be an array of term IDs' });
+  }
+
+  if (remove_terms && !Array.isArray(remove_terms)) {
+    return res.status(400).json({ error: 'remove_terms must be an array of term IDs' });
   }
 
   try {
@@ -50,16 +64,27 @@ exports.updateMe = async (req, res) => {
       ...otherMetadata,
       ...(gender && { gender: gender.toLowerCase() })
     };
+    if (Object.keys(metadataUpdates).length > 0) {
+      await updateUserMetadata(user_id, metadataUpdates);
+    }
 
-    await updateUserMetadata(user_id, metadataUpdates);
+    if (language_id) {
+      await updateUserLanguage(user_id, language_id);
+    }
 
-    res.json({ message: 'Profile metadata updated successfully' });
+    if (add_terms?.length) {
+      await addUserTerms(user_id, add_terms);
+    }
+    if (remove_terms?.length) {
+      await removeUserTerms(user_id, remove_terms);
+    }
+
+    res.json({ message: 'Profile updated successfully' });
   } catch (err) {
-    console.error('Update user metadata error:', err);
+    console.error('Update user error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
-
 
 exports.getUsers = async (req, res) => {
   try {
@@ -99,7 +124,6 @@ exports.getUsers = async (req, res) => {
   }
 };
 
-
 exports.getUserById = async (req, res) => {
   const user_id = req.params.id;
 
@@ -115,7 +139,6 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-
 exports.updateUserMetaByAdmin = async (req, res) => {
   const requesting_user = req.user;
   const target_user_id = req.params.id;
@@ -125,7 +148,10 @@ exports.updateUserMetaByAdmin = async (req, res) => {
     last_name,
     dob,
     gender,
-    role
+    role,
+    language_id,
+    add_terms,
+    remove_terms
   } = req.body;
 
   const allowed_genders = ['male', 'female', 'other'];
@@ -139,6 +165,18 @@ exports.updateUserMetaByAdmin = async (req, res) => {
     return res.status(400).json({ error: 'Invalid role' });
   }
 
+  if (language_id && typeof language_id !== 'number') {
+    return res.status(400).json({ error: 'language_id must be a number' });
+  }
+
+  if (add_terms && !Array.isArray(add_terms)) {
+    return res.status(400).json({ error: 'add_terms must be an array of term IDs' });
+  }
+
+  if (remove_terms && !Array.isArray(remove_terms)) {
+    return res.status(400).json({ error: 'remove_terms must be an array of term IDs' });
+  }
+
   try {
     if (requesting_user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can update other users\' metadata' });
@@ -146,6 +184,7 @@ exports.updateUserMetaByAdmin = async (req, res) => {
 
     const user = await getUserById(target_user_id);
     if (!user) return res.status(404).json({ error: 'Target user not found' });
+
 
     await updateUserMetadata(target_user_id, {
       ...(first_name && { first_name }),
@@ -159,13 +198,23 @@ exports.updateUserMetaByAdmin = async (req, res) => {
       await updateUserRole(target_user_id, role.toLowerCase());
     }
 
+    if (language_id) {
+      await updateUserLanguage(target_user_id, language_id);
+    }
+
+    if (add_terms?.length) {
+      await addUserTerms(target_user_id, add_terms);
+    }
+    if (remove_terms?.length) {
+      await removeUserTerms(target_user_id, remove_terms);
+    }
+
     res.json({ message: 'User metadata updated by admin successfully' });
   } catch (err) {
     console.error('Update user meta by admin error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
-
 
 exports.uploadProfilePic = async (req, res) => {
   try {
@@ -185,7 +234,6 @@ exports.uploadProfilePic = async (req, res) => {
     res.status(500).json({ error: 'Failed to update profile picture' });
   }
 };
-
 
 exports.uploadDocument = async (req, res) => {
   const user_role = req.user.role;
@@ -218,7 +266,6 @@ exports.uploadDocument = async (req, res) => {
     return res.status(500).json({ error: 'Failed to upload document' });
   }
 };
-
 
 exports.deleteDocument = async (req, res) => {
   const user_id = req.user.id;
@@ -265,7 +312,6 @@ exports.deleteDocument = async (req, res) => {
     return res.status(500).json({ error: 'Failed to delete document' });
   }
 };
-
 
 exports.listUserDocuments = async (req, res) => {
   const user_id = req.user.id;

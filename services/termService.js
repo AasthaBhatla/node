@@ -77,6 +77,34 @@ const updateTermByTaxonomyId = async (taxonomyId, slug, title) => {
     throw new Error('Error updating term by taxonomy ID');
   }
 };
+const updateTermById = async (id, slug, title) => {
+  try {
+    const query = `
+      UPDATE terms
+      SET slug = $1, title = $2, updated_at = NOW()
+      WHERE id = $3
+      RETURNING *;
+    `;
+    const values = [slug, title, id];
+    const { rows } = await pool.query(query, values);
+    return rows[0] || null;  
+  } catch (err) {
+    console.error('Error in updateTermById:', err);
+    throw new Error('Error updating term by ID');
+  }
+};
+const deleteTermById = async (id) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM terms WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0] || null; // returns deleted term or null if not found
+  } catch (err) {
+    console.error('Error in deleteTermById:', err);
+    throw new Error('Error deleting term by ID');
+  }
+};
 
 module.exports = {
   createTerm,
@@ -84,5 +112,7 @@ module.exports = {
   getTermBySlug,
   getTermsByTaxonomyId,
   getTermsByTaxonomySlug,
-  updateTermByTaxonomyId
+  updateTermByTaxonomyId,
+  updateTermById,
+  deleteTermById
 };

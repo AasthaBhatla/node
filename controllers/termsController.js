@@ -2,7 +2,8 @@ const {
   createTerm,
   getTermById,
   getTermsByTaxonomyId,
-  updateTermByTaxonomyId
+  updateTermByTaxonomyId,
+  updateTermsById
 } = require('../services/termService');
 
 exports.create = async (req, res) => {
@@ -46,25 +47,28 @@ exports.getTermsByTaxonomyId = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
-exports.updateByTaxonomyId = async (req, res) => {
+exports.updateByTermId = async (req, res) => {
   try {
     const user = req.user;
     if (user.role.toLowerCase() !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
-    const { taxonomyId, slug, title } = req.body;
-    if (!taxonomyId || !slug || !title) {
-      return res.status(400).json({ error: 'taxonomyId, slug, and title are required' });
+    const { id } = req.params;  
+    const { slug, title } = req.body;
+
+    if (!id || !slug || !title) {
+      return res.status(400).json({ error: 'id, slug, and title are required' });
     }
 
-    const updatedTerm = await updateTermByTaxonomyId(taxonomyId, slug, title);
+    const updatedTerm = await updateTermById(id, slug, title);
     if (!updatedTerm) {
-      return res.status(404).json({ error: 'Term not found for given taxonomyId' });
+      return res.status(404).json({ error: 'Term not found for given id' });
     }
 
     res.json(updatedTerm);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

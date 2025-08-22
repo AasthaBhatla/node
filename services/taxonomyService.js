@@ -69,6 +69,17 @@ const getTaxonomyByTermId = async (termId) => {
     throw new Error('Error fetching taxonomy by term ID');
   }
 };
+const deleteTaxonomyById = async (id) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM taxonomy WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0]; 
+  } catch (err) {
+    throw new Error('Error deleting taxonomy');
+  }
+};
 
 module.exports = {
   createTaxonomy,
@@ -76,5 +87,6 @@ module.exports = {
   getAllTaxonomies,
   updateTaxonomyById,
   getTaxonomyBySlug,
-  getTaxonomyByTermId
+  getTaxonomyByTermId,
+  deleteTaxonomyById
 };

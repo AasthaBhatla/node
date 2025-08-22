@@ -37,3 +37,9 @@ CREATE TABLE IF NOT EXISTS user_devices (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(user_id, device_token)
 );
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS language_id INT REFERENCES languages(id);
+
+UPDATE users 
+SET language_id = (SELECT id FROM languages WHERE slug = 'english')
+WHERE language_id IS NULL;

@@ -412,6 +412,62 @@ const updateUser = async (userId, fields) => {
     throw err; 
   }
 };
+const updateUserLanguage = async (userId, languageId) => {
+  try {
+    const lang = await pool.query(`SELECT id FROM languages WHERE id = $1`, [languageId]);
+    if (lang.rowCount === 0) throw new Error('Invalid language_id');
+
+    await pool.query(
+      `UPDATE users SET language_id = $1 WHERE id = $2`,
+      [languageId, userId]
+    );
+  } catch (err) {
+    console.error('Error in updateUserLanguage:', err);
+    throw new Error('Error updating user language');
+  }
+};
+const addUserTerms = async (userId, termIds) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const termId of termIds) {
+      const term = await client.query(
+        `SELECT taxonomy_id FROM terms WHERE id = $1`,
+        [termId]
+      );
+      if (term.rowCount === 0) continue;
+
+      const taxonomy_id = term.rows[0].taxonomy_id;
+
+      await client.query(
+        `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
+         VALUES ($1, $2, 'user', $3)
+         ON CONFLICT DO NOTHING`,
+        [termId, taxonomy_id, userId]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error in addUserTerms:', err);
+    throw new Error('Error adding terms');
+  } finally {
+    client.release();
+  }
+};
+
+const removeUserTerms = async (userId, termIds) => {
+  try {
+    await pool.query(
+      `DELETE FROM taxonomy_relationships
+       WHERE type = 'user' AND type_id = $1 AND term_id = ANY($2)`,
+      [userId, termIds]
+    );
+  } catch (err) {
+    console.error('Error in removeUserTerms:', err);
+    throw new Error('Error removing terms');
+  }
+};
 
 module.exports = {
   normalizePhone,
@@ -433,5 +489,8 @@ module.exports = {
   addDocumentToMetadata,
   getUserDocuments,
   updateUser,
-  removeDocumentFromMetadata
+  removeDocumentFromMetadata,
+  updateUserLanguage,
+  addUserTerms,
+  removeUserTerms
 };

@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS languages (
+  id SERIAL PRIMARY KEY,
+  slug VARCHAR(100) NOT NULL UNIQUE,
+  title VARCHAR(200) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO languages (slug, title) 
+VALUES ('english', 'English')
+ON CONFLICT (slug) DO NOTHING;
