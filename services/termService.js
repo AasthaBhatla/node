@@ -1,13 +1,16 @@
 const pool = require('../db');
 
-const createTerm = async (taxonomyId, slug, title) => {
+const createTerm = async (taxonomyId, slug, title, parentId = null) => {
   try {
     const result = await pool.query(
-      `INSERT INTO terms (taxonomy_id, slug, title) VALUES ($1, $2, $3) RETURNING *`,
-      [taxonomyId, slug, title]
+      `INSERT INTO terms (taxonomy_id, slug, title, parent_id) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING *`,
+      [taxonomyId, slug, title, parentId]
     );
     return result.rows[0];
   } catch (err) {
+    console.error('Error in createTerm:', err);
     throw new Error('Error creating term');
   }
 };
@@ -63,43 +66,60 @@ const getTermsByTaxonomySlug = async (slug) => {
   }
 };
 
-const updateTermByTaxonomyId = async (taxonomyId, slug, title) => {
+const updateTermByTaxonomyId = async (taxonomyId, slug, title, parentId = null) => {
   try {
     const result = await pool.query(
       `UPDATE terms 
-       SET slug = $2, title = $3 
+       SET slug = $2, title = $3, parent_id = $4, updated_at = NOW()
        WHERE taxonomy_id = $1 
        RETURNING *`,
-      [taxonomyId, slug, title]
+      [taxonomyId, slug, title, parentId]
     );
     return result.rows[0];
   } catch (err) {
     throw new Error('Error updating term by taxonomy ID');
   }
 };
-const updateTermById = async (id, slug, title) => {
+
+const updateTermById = async (id, slug, title, parentId = null) => {
   try {
+
+    if (parentId && parseInt(parentId) === parseInt(id)) {
+      throw new Error('A term cannot be its own parent');
+    }
+
+    if (parentId) {
+      const parentCheck = await pool.query(
+        `SELECT id FROM terms WHERE id = $1`,
+        [parentId]
+      );
+      if (parentCheck.rows.length === 0) {
+        throw new Error('Parent term not found');
+      }
+    }
+
     const query = `
       UPDATE terms
-      SET slug = $1, title = $2, updated_at = NOW()
-      WHERE id = $3
+      SET slug = $1, title = $2, parent_id = $3, updated_at = NOW()
+      WHERE id = $4
       RETURNING *;
     `;
-    const values = [slug, title, id];
+    const values = [slug, title, parentId || null, id];
     const { rows } = await pool.query(query, values);
-    return rows[0] || null;  
+    return rows[0] || null;
   } catch (err) {
     console.error('Error in updateTermById:', err);
-    throw new Error('Error updating term by ID');
+    throw err; 
   }
 };
+
 const deleteTermById = async (id) => {
   try {
     const result = await pool.query(
       `DELETE FROM terms WHERE id = $1 RETURNING *`,
       [id]
     );
-    return result.rows[0] || null; // returns deleted term or null if not found
+    return result.rows[0] || null;
   } catch (err) {
     console.error('Error in deleteTermById:', err);
     throw new Error('Error deleting term by ID');

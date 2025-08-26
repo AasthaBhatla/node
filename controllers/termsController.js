@@ -2,8 +2,7 @@ const {
   createTerm,
   getTermById,
   getTermsByTaxonomyId,
-  updateTermByTaxonomyId,
-  updateTermsById
+  updateTermById
 } = require('../services/termService');
 
 exports.create = async (req, res) => {
@@ -13,14 +12,15 @@ exports.create = async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
-    const { taxonomyId, slug, title } = req.body;
+    const { taxonomyId, slug, title, parentId } = req.body;
     if (!taxonomyId || !slug || !title) {
       return res.status(400).json({ error: 'taxonomyId, slug, and title are required' });
     }
 
-    const term = await createTerm(taxonomyId, slug, title);
+    const term = await createTerm(taxonomyId, slug, title, parentId || null);
     res.status(201).json(term);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -34,6 +34,7 @@ exports.getTermById = async (req, res) => {
     }
     res.json(term);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -44,9 +45,11 @@ exports.getTermsByTaxonomyId = async (req, res) => {
     const terms = await getTermsByTaxonomyId(id);
     res.json(terms);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
 exports.updateByTermId = async (req, res) => {
   try {
     const user = req.user;
@@ -54,14 +57,14 @@ exports.updateByTermId = async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
-    const { id } = req.params;  
-    const { slug, title } = req.body;
+    const { id } = req.params;
+    const { slug, title, parentId } = req.body;
 
     if (!id || !slug || !title) {
       return res.status(400).json({ error: 'id, slug, and title are required' });
     }
 
-    const updatedTerm = await updateTermById(id, slug, title);
+    const updatedTerm = await updateTermById(id, slug, title, parentId || null);
     if (!updatedTerm) {
       return res.status(404).json({ error: 'Term not found for given id' });
     }

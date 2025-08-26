@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create user_metadata table
 CREATE TABLE IF NOT EXISTS user_metadata (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -43,3 +42,6 @@ ALTER TABLE users
 UPDATE users 
 SET language_id = (SELECT id FROM languages WHERE slug = 'english')
 WHERE language_id IS NULL;
+
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS location_id INT REFERENCES locations(id); 

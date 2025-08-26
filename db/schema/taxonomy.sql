@@ -21,3 +21,5 @@ CREATE TABLE IF NOT EXISTS taxonomy_relationships (
     type_id INT NOT NULL,           
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE terms
+ADD COLUMN parent_id INT REFERENCES terms(id) ON DELETE SET NULL;
