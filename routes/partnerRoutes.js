@@ -5,10 +5,11 @@ const authMiddleware = require('../middlewares/authMiddleware');
 
 router.get('/filters', partnerController.getFilters);
 router.get('/featured', partnerController.getFeatured);
+router.get('/:id/reviews', partnerController.getReviews);
+router.get('/:id/ratings', partnerController.getRatings);
+
 router.get('/', authMiddleware, partnerController.getAll);
 router.get('/:id', authMiddleware, partnerController.getById);
 router.get('/:id/availability', authMiddleware, partnerController.checkAvailability);
-router.get('/:id/reviews', authMiddleware, partnerController.getReviews);
-router.get('/:id/ratings', authMiddleware, partnerController.getRatings);
 
 module.exports = router;

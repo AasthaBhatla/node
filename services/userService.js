@@ -34,7 +34,7 @@ const insertUser = async (email, phone) => {
 
 const setOtp = async (userId) => {
   try {
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString(); 
     await pool.query(
       `UPDATE users SET otp = $1 WHERE id = $2`,
       [otp, userId]
@@ -44,6 +44,7 @@ const setOtp = async (userId) => {
     throw new Error('Error setting OTP');
   }
 };
+
 
 const verifyOtp = async (userId, otp) => {
   try {

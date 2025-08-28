@@ -45,3 +45,13 @@ WHERE language_id IS NULL;
 
 ALTER TABLE users 
   ADD COLUMN IF NOT EXISTS location_id INT REFERENCES locations(id); 
+
+CREATE TABLE IF NOT EXISTS user_reviews (
+  id SERIAL PRIMARY KEY,
+  reviewer_id INT REFERENCES users(id) ON DELETE CASCADE,
+  reviewee_id INT REFERENCES users(id) ON DELETE CASCADE,
+  rating INT CHECK (rating >= 1 AND rating <= 5),
+  review TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(reviewer_id, reviewee_id) -- one review per pair
+);
