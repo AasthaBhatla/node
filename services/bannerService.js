@@ -1,6 +1,5 @@
 const pool = require("../db");
 
-
 const createBanner = async (banner_url, banner_title, alt_text, position, action) => {
   try {
     const query = `

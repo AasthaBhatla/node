@@ -2,6 +2,6 @@ const express = require('express');
 const router = express.Router();
 const locationController = require('../controllers/locationController');
 
-router.get('/locations', locationController.getAll);
+router.get('/', locationController.getAll);
 
 module.exports = router;
