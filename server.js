@@ -15,6 +15,7 @@ const orderItemRoutes = require("./routes/orderItemRoutes");
 const bannerRoutes = require("./routes/bannerRoutes");
 const locationRoutes = require("./routes/locationRoutes");   
 const languageRoutes = require("./routes/languageRoutes"); 
+const postRoutes = require("./routes/postRoutes");
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
@@ -27,6 +28,7 @@ app.use("/order-items", orderItemRoutes);
 app.use("/banners", bannerRoutes);
 app.use("/locations", locationRoutes);  
 app.use("/languages", languageRoutes);
+app.use("/posts", postRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
