@@ -53,5 +53,5 @@ CREATE TABLE IF NOT EXISTS user_reviews (
   rating INT CHECK (rating >= 1 AND rating <= 5),
   review TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(reviewer_id, reviewee_id) -- one review per pair
+  UNIQUE(reviewer_id, reviewee_id) 
 );
