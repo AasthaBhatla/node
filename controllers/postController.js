@@ -212,56 +212,33 @@ exports.updatePostMetadata = async (req, res) => {
 
 exports.upsertPostMetadata = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({ error: "Only admin can upsert metadata" });
     }
 
     const { id: postId } = req.params;
-    const { key, value, items } = req.body;
+    const { items } = req.body;
 
-    // Single upsert
-    if (key && typeof value !== "undefined") {
-      const meta = await upsertPostMetadata(postId, key, value);
-      return res.status(200).json({ message: "Metadata upserted", meta });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Provide { items: [...] }" });
     }
 
-    // Batch upsert: items = [{ key, value }, ...]
-    if (Array.isArray(items) && items.length) {
-      // Basic validation
-      for (const i of items) {
-        if (!i.key || typeof i.value === "undefined") {
-          return res
-            .status(400)
-            .json({ error: "Each item must have key and value" });
-        }
-      }
-
-      // Optional: do it in a transaction for atomicity
-      await pool.query("BEGIN");
-      try {
-        const results = [];
-        for (const i of items) {
-          const meta = await upsertPostMetadata(postId, i.key, i.value);
-          results.push(meta);
-        }
-        await pool.query("COMMIT");
+    const results = [];
+    for (const i of items) {
+      if (!i.key || typeof i.value === "undefined") {
         return res
-          .status(200)
-          .json({ message: "Metadata batch upserted", items: results });
-      } catch (txErr) {
-        await pool.query("ROLLBACK");
-        console.error("Batch Upsert Error:", txErr);
-        return res
-          .status(500)
-          .json({ error: "Failed to upsert batch metadata" });
+          .status(400)
+          .json({ error: "Each item must have key and value" });
       }
+      const meta = await upsertPostMetadata(postId, i.key, i.value);
+      results.push(meta);
     }
 
     return res
-      .status(400)
-      .json({ error: "Provide { key, value } or { items: [...] }" });
+      .status(200)
+      .json({ message: "Metadata upserted", items: results });
   } catch (err) {
-    console.error("Upsert Metadata Error:", err);
+    console.error("Upsert Metadata Error:", err.stack || err);
     return res.status(500).json({ error: "Internal server error" });
   }
 };

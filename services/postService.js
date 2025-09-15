@@ -148,24 +148,17 @@ const deletePostMetadataById = async (id) => {
   }
 };
 
-const upsertPostMetadata = async (postId, key, value) => {
-  try {
-    const result = await pool.query(
-      `
-      INSERT INTO post_metadata (post_id, key, value)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (post_id, key)
-      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-      RETURNING *;
-      `,
-      [postId, key, value]
-    );
-    return result.rows[0];
-  } catch (err) {
-    console.error("Error in upsertPostMetadata:", err);
-    throw new Error("Error upserting post metadata");
-  }
-};
+async function upsertPostMetadata(postId, key, value) {
+  const query = `
+    INSERT INTO post_metadata (post_id, meta_key, meta_value)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (post_id, meta_key)
+    DO UPDATE SET meta_value = EXCLUDED.meta_value
+    RETURNING post_id, meta_key, meta_value;
+  `;
+  const { rows } = await pool.query(query, [postId, key, value]);
+  return rows[0];
+}
 
 module.exports = {
   createPost,
