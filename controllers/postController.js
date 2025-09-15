@@ -7,6 +7,7 @@ const {
   getMetadataByPostId,
   updatePostById,
   updatePostMetadata,
+  upsertPostMetadata,
   deletePostById,
   deletePostMetadataById,
 } = require("../services/postService");
@@ -19,7 +20,9 @@ exports.createPost = async (req, res) => {
 
     const { post_type, title, slug, metadata } = req.body;
     if (!post_type || !title || !slug) {
-      return res.status(400).json({ error: "post_type, title, and slug are required" });
+      return res
+        .status(400)
+        .json({ error: "post_type, title, and slug are required" });
     }
 
     const post = await createPost(post_type, title, slug, req.user.id);
@@ -165,7 +168,7 @@ exports.createPostMetadata = async (req, res) => {
       return res.status(403).json({ error: "Only admin can add metadata" });
     }
 
-    const { id } = req.params; 
+    const { id } = req.params;
     const { key, value } = req.body;
 
     if (!key || !value) {
@@ -173,7 +176,9 @@ exports.createPostMetadata = async (req, res) => {
     }
 
     const meta = await createPostMetadata(id, key, value);
-    return res.status(201).json({ message: "Metadata created successfully", meta });
+    return res
+      .status(201)
+      .json({ message: "Metadata created successfully", meta });
   } catch (err) {
     console.error("Create Metadata Error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -186,7 +191,7 @@ exports.updatePostMetadata = async (req, res) => {
       return res.status(403).json({ error: "Only admin can update metadata" });
     }
 
-    const { id } = req.params; 
+    const { id } = req.params;
     const { key, value } = req.body;
 
     if (!key || !value) {
@@ -201,6 +206,62 @@ exports.updatePostMetadata = async (req, res) => {
     return res.json({ message: "Metadata updated successfully", updatedMeta });
   } catch (err) {
     console.error("Update Metadata Error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+exports.upsertPostMetadata = async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Only admin can upsert metadata" });
+    }
+
+    const { id: postId } = req.params;
+    const { key, value, items } = req.body;
+
+    // Single upsert
+    if (key && typeof value !== "undefined") {
+      const meta = await upsertPostMetadata(postId, key, value);
+      return res.status(200).json({ message: "Metadata upserted", meta });
+    }
+
+    // Batch upsert: items = [{ key, value }, ...]
+    if (Array.isArray(items) && items.length) {
+      // Basic validation
+      for (const i of items) {
+        if (!i.key || typeof i.value === "undefined") {
+          return res
+            .status(400)
+            .json({ error: "Each item must have key and value" });
+        }
+      }
+
+      // Optional: do it in a transaction for atomicity
+      await pool.query("BEGIN");
+      try {
+        const results = [];
+        for (const i of items) {
+          const meta = await upsertPostMetadata(postId, i.key, i.value);
+          results.push(meta);
+        }
+        await pool.query("COMMIT");
+        return res
+          .status(200)
+          .json({ message: "Metadata batch upserted", items: results });
+      } catch (txErr) {
+        await pool.query("ROLLBACK");
+        console.error("Batch Upsert Error:", txErr);
+        return res
+          .status(500)
+          .json({ error: "Failed to upsert batch metadata" });
+      }
+    }
+
+    return res
+      .status(400)
+      .json({ error: "Provide { key, value } or { items: [...] }" });
+  } catch (err) {
+    console.error("Upsert Metadata Error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
