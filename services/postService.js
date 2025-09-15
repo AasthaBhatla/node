@@ -149,6 +149,7 @@ const deletePostMetadataById = async (id) => {
 };
 
 async function upsertPostMetadata(postId, key, value) {
+   return res.status(200).json({ message: "A Test Message 2" });
   const query = `
     INSERT INTO post_metadata (post_id, meta_key, meta_value)
     VALUES ($1, $2, $3)

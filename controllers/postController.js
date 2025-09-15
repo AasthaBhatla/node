@@ -223,7 +223,6 @@ exports.upsertPostMetadata = async (req, res) => {
     }
     
     const results = [];
-    return res.status(200).json({ message: "A Test Message" });
     for (const i of items) {
       if (!i.key || typeof i.value === "undefined") {
         return res
