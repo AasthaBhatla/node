@@ -229,8 +229,7 @@ exports.upsertPostMetadata = async (req, res) => {
           .status(400)
           .json({ error: "Each item must have key and value" });
       }
-      // const meta = await upsertPostMetadata(postId, i.key, i.value);
-      const meta = "yu";
+      const meta = await upsertPostMetadata(postId, i.key, i.value);
       results.push(meta);
     }
 
