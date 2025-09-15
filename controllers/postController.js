@@ -215,7 +215,7 @@ exports.upsertPostMetadata = async (req, res) => {
     if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({ error: "Only admin can upsert metadata" });
     }
-
+    return req.status(200).json({ message: "A Test Message" });
     const { id: postId } = req.params;
     const { items } = req.body;
 
