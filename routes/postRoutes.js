@@ -14,7 +14,7 @@ router.post("/", postController.createPost);
 // router.post("/:id/metadata", postController.createPostMetadata);
 router.post("/:id/metadata", postController.upsertPostMetadata);
 router.post("/:id", postController.updatePost);
-router.post("/metadata/:id", postController.updatePostMetadata);
+// router.post("/metadata/:id", postController.updatePostMetadata);
 
 router.delete("/:id", postController.deletePost);
 router.delete("/metadata/:id", postController.deletePostMetadata);
