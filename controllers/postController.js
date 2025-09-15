@@ -217,26 +217,24 @@ exports.upsertPostMetadata = async (req, res) => {
     }
     const { id: postId } = req.params;
     const { items } = req.body;
-    return res.status(200).json({ message: "A Test Message" });
-
+    
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Provide { items: [...] }" });
     }
-
+    
     const results = [];
+    return res.status(200).json({ message: "A Test Message" });
     for (const i of items) {
       if (!i.key || typeof i.value === "undefined") {
         return res
-          .status(400)
-          .json({ error: "Each item must have key and value" });
+        .status(400)
+        .json({ error: "Each item must have key and value" });
       }
       const meta = await upsertPostMetadata(postId, i.key, i.value);
       results.push(meta);
     }
-
-    return res
-      .status(200)
-      .json({ message: "Metadata upserted", items: results });
+    
+    return res.status(200).json({ message: "Metadata upserted", items: results });
   } catch (err) {
     console.error("Upsert Metadata Error:", err.stack || err);
     return res.status(500).json({ error: "Internal server error" });
