@@ -62,16 +62,24 @@ const getPostBySlug = async (slug) => {
   }
 };
 
-const getAllPosts = async (offset = 0, limit = 10) => {
+const getAllPosts = async (offset = 0, limit = 10, postType = "post") => {
   try {
-    const result = await pool.query(
-      `SELECT p.*, u.email AS author_email
-       FROM posts p
-       JOIN users u ON p.author_id = u.id
-       ORDER BY p.created_at DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
+    let query = `
+      SELECT p.*, u.email AS author_email
+      FROM posts p
+      JOIN users u ON p.author_id = u.id
+    `;
+    const values = [];
+
+    if (postType) {
+      query += ` WHERE p.post_type = $1`;
+      values.push(postType);
+    }
+
+    query += ` ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+    values.push(limit, offset);
+
+    const result = await pool.query(query, values);
     return result.rows;
   } catch (err) {
     console.error("Error in getAllPosts:", err);

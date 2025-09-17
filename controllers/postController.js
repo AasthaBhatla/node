@@ -42,27 +42,18 @@ exports.createPost = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
   try {
-    const { offset, limit } = req.query;
+    const { offset, limit, post_type } = req.body;
 
-    let posts;
-    if (!offset && !limit) {
-      posts = await getAllPosts(0, 10);
-    } else if (!offset || !limit) {
+    const parsedOffset = parseInt(offset, 10) || 0;
+    const parsedLimit = parseInt(limit, 10) || 10;
+
+    if (isNaN(parsedOffset) || isNaN(parsedLimit)) {
       return res
         .status(400)
-        .json({ error: "Both offset and limit are required" });
-    } else {
-      const parsedOffset = parseInt(offset, 10);
-      const parsedLimit = parseInt(limit, 10);
-
-      if (isNaN(parsedOffset) || isNaN(parsedLimit)) {
-        return res
-          .status(400)
-          .json({ error: "offset and limit must be valid numbers" });
-      }
-
-      posts = await getAllPosts(parsedOffset, parsedLimit);
+        .json({ error: "offset and limit must be valid numbers" });
     }
+
+    const posts = await getAllPosts(parsedOffset, parsedLimit, post_type || "post");
 
     return res.json({ posts });
   } catch (err) {
