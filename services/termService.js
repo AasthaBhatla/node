@@ -66,24 +66,39 @@ const getTermsByTaxonomySlug = async (slug) => {
   }
 };
 
-const updateTermByTaxonomyId = async (taxonomyId, slug, title, parentId = null) => {
+const updateTermByTaxonomyId = async (taxonomyId, termId, slug, title, parentId = null) => {
   try {
-    const result = await pool.query(
-      `UPDATE terms 
-       SET slug = $2, title = $3, parent_id = $4, updated_at = NOW()
-       WHERE taxonomy_id = $1 
-       RETURNING *`,
-      [taxonomyId, slug, title, parentId]
-    );
-    return result.rows[0];
+    if (parentId && parseInt(parentId) === parseInt(termId)) {
+      throw new Error('A term cannot be its own parent');
+    }
+
+    if (parentId) {
+      const parentCheck = await pool.query(
+        `SELECT id FROM terms WHERE id = $1 AND taxonomy_id = $2`,
+        [parentId, taxonomyId]
+      );
+      if (parentCheck.rows.length === 0) {
+        throw new Error('Parent term not found in same taxonomy');
+      }
+    }
+
+    const query = `
+      UPDATE terms
+      SET slug = $3, title = $4, parent_id = $5, updated_at = NOW()
+      WHERE taxonomy_id = $1 AND id = $2
+      RETURNING *;
+    `;
+    const values = [taxonomyId, termId, slug, title, parentId || null];
+    const { rows } = await pool.query(query, values);
+    return rows[0] || null;
   } catch (err) {
-    throw new Error('Error updating term by taxonomy ID');
+    console.error('Error in updateTermByTaxonomyId:', err);
+    throw err;
   }
 };
 
 const updateTermById = async (id, slug, title, parentId = null) => {
   try {
-
     if (parentId && parseInt(parentId) === parseInt(id)) {
       throw new Error('A term cannot be its own parent');
     }
@@ -105,11 +120,12 @@ const updateTermById = async (id, slug, title, parentId = null) => {
       RETURNING *;
     `;
     const values = [slug, title, parentId || null, id];
+
     const { rows } = await pool.query(query, values);
     return rows[0] || null;
   } catch (err) {
     console.error('Error in updateTermById:', err);
-    throw err; 
+    throw err;
   }
 };
 

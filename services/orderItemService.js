@@ -1,17 +1,41 @@
 const pool = require("../db");
 
-const createOrderItem = async (orderId, productId, quantity, notes) => {
+const createOrderItem = async (orderId, productIdOrIds, quantities = [], notes = []) => {
   try {
-    const result = await pool.query(
-      `INSERT INTO order_items (order_id, product_id, quantity, notes)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [orderId, productId, quantity, notes]
-    );
-    return result.rows[0];
+    // Case 1: productIdOrIds is a single value
+    if (!Array.isArray(productIdOrIds)) {
+      const result = await pool.query(
+        `INSERT INTO order_items (order_id, product_id, quantity, notes)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [orderId, productIdOrIds, quantities || 1, notes || null]
+      );
+      return result.rows;
+    }
+
+    // Case 2: productIdOrIds is an array → multiple insert
+    const productIds = productIdOrIds;
+    const values = [];
+    const placeholders = [];
+
+    productIds.forEach((pid, i) => {
+      const qty = quantities[i] || 1;
+      const note = notes[i] || null;
+      values.push(orderId, pid, qty, note);
+      placeholders.push(`($${values.length - 3}, $${values.length - 2}, $${values.length - 1}, $${values.length})`);
+    });
+
+    const query = `
+      INSERT INTO order_items (order_id, product_id, quantity, notes)
+      VALUES ${placeholders.join(", ")}
+      RETURNING *;
+    `;
+
+    const result = await pool.query(query, values);
+    return result.rows;
   } catch (err) {
     console.error("Error in createOrderItem:", err);
-    throw new Error("Error creating order item");
+    throw new Error("Error creating order item(s)");
   }
 };
 

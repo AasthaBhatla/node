@@ -15,3 +15,5 @@ CREATE TABLE IF NOT EXISTS post_metadata (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(post_id, key)
 );
+ALTER TABLE posts
+ALTER COLUMN post_type SET DEFAULT 'posts';

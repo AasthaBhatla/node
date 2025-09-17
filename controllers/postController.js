@@ -19,13 +19,13 @@ exports.createPost = async (req, res) => {
     }
 
     const { post_type, title, slug, metadata } = req.body;
-    if (!post_type || !title || !slug) {
+    if (!title || !slug) {
       return res
         .status(400)
-        .json({ error: "post_type, title, and slug are required" });
+        .json({ error: "title, and slug are required" });
     }
 
-    const post = await createPost(post_type, title, slug, req.user.id);
+    const post = await createPost(post_type || undefined, title, slug, req.user.id);
 
     if (metadata && typeof metadata === "object") {
       for (const key of Object.keys(metadata)) {
@@ -42,7 +42,28 @@ exports.createPost = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
   try {
-    const posts = await getAllPosts();
+    const { offset, limit } = req.query;
+
+    let posts;
+    if (!offset && !limit) {
+      posts = await getAllPosts(0, 10);
+    } else if (!offset || !limit) {
+      return res
+        .status(400)
+        .json({ error: "Both offset and limit are required" });
+    } else {
+      const parsedOffset = parseInt(offset, 10);
+      const parsedLimit = parseInt(limit, 10);
+
+      if (isNaN(parsedOffset) || isNaN(parsedLimit)) {
+        return res
+          .status(400)
+          .json({ error: "offset and limit must be valid numbers" });
+      }
+
+      posts = await getAllPosts(parsedOffset, parsedLimit);
+    }
+
     return res.json({ posts });
   } catch (err) {
     console.error("Get Posts Error:", err);

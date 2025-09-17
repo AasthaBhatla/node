@@ -50,7 +50,7 @@ exports.getTermsByTaxonomyId = async (req, res) => {
   }
 };
 
-exports.updateByTermId = async (req, res) => {
+exports.updateById = async (req, res) => {
   try {
     const user = req.user;
     if (user.role.toLowerCase() !== 'admin') {
@@ -60,18 +60,20 @@ exports.updateByTermId = async (req, res) => {
     const { id } = req.params;
     const { slug, title, parentId } = req.body;
 
-    if (!id || !slug || !title) {
-      return res.status(400).json({ error: 'id, slug, and title are required' });
+    if (!slug || !title) {
+      return res.status(400).json({ error: 'slug and title are required' });
     }
 
     const updatedTerm = await updateTermById(id, slug, title, parentId || null);
+
     if (!updatedTerm) {
-      return res.status(404).json({ error: 'Term not found for given id' });
+      return res.status(404).json({ error: 'Term not found' });
     }
 
     res.json(updatedTerm);
   } catch (err) {
-    console.error(err);
+    console.error('Update Term by ID Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+

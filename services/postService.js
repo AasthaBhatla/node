@@ -4,7 +4,7 @@ const createPost = async (postType, title, slug, authorId) => {
   try {
     const result = await pool.query(
       `INSERT INTO posts (post_type, title, slug, author_id)
-       VALUES ($1, $2, $3, $4)
+       VALUES (COALESCE($1, DEFAULT), $2, $3, $4)
        RETURNING *`,
       [postType, title, slug, authorId]
     );
@@ -62,13 +62,15 @@ const getPostBySlug = async (slug) => {
   }
 };
 
-const getAllPosts = async () => {
+const getAllPosts = async (offset = 0, limit = 10) => {
   try {
     const result = await pool.query(
       `SELECT p.*, u.email AS author_email
        FROM posts p
        JOIN users u ON p.author_id = u.id
-       ORDER BY p.created_at DESC`
+       ORDER BY p.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
     return result.rows;
   } catch (err) {
@@ -76,6 +78,7 @@ const getAllPosts = async () => {
     throw new Error("Error fetching posts");
   }
 };
+
 
 const getMetadataByPostId = async (postId) => {
   try {
@@ -94,7 +97,7 @@ const updatePostById = async (id, postType, title, slug) => {
   try {
     const result = await pool.query(
       `UPDATE posts
-       SET post_type = $1, title = $2, slug = $3, updated_at = NOW()
+       SET post_type = $1, title = $2, slug = $3
        WHERE id = $4
        RETURNING *`,
       [postType, title, slug, id]
@@ -110,7 +113,7 @@ const updatePostMetadata = async (id, key, value) => {
   try {
     const result = await pool.query(
       `UPDATE post_metadata
-       SET key = $1, value = $2, updated_at = NOW()
+       SET key = $1, value = $2
        WHERE id = $3
        RETURNING *`,
       [key, value, id]

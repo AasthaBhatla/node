@@ -8,15 +8,26 @@ const {
 
 exports.create = async (req, res) => {
   try {
-    const { orderId, productId, quantity, notes } = req.body;
-    if (!orderId || !productId) {
-      return res.status(400).json({ error: "orderId and productId are required" });
+    const { orderId, productId, productIds, quantity, quantities, notes } = req.body;
+
+    if (!orderId || (!productId && (!Array.isArray(productIds) || productIds.length === 0))) {
+      return res.status(400).json({ error: "orderId and productId(s) are required" });
     }
 
-    const orderItem = await createOrderItem(orderId, productId, quantity || 1, notes || null);
-    res.status(201).json(orderItem);
+    let orderItems = await createOrderItem(
+      orderId,
+      productId || productIds,   
+      quantity || quantities,    
+      notes || null             
+    );
+
+    if (!Array.isArray(orderItems)) {
+      orderItems = [orderItems];
+    }
+
+    res.status(201).json(orderItems);
   } catch (err) {
-    console.error("Error in create order item:", err);
+    console.error("Error in create order item(s):", err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
