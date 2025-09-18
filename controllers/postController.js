@@ -46,23 +46,23 @@ exports.createPost = async (req, res) => {
   }
 };
 
-
 exports.getPosts = async (req, res) => {
   try {
-    const { offset, limit, post_type, term_ids, metadata } = req.body;
+    const { offset, limit, post_type, term_ids, metadata, meta } = req.body;
 
     const parsedOffset = parseInt(offset, 10) || 0;
     const parsedLimit = parseInt(limit, 10) || 10;
 
-    if (isNaN(parsedOffset) || isNaN(parsedLimit)) {
-      return res.status(400).json({ error: "offset and limit must be valid numbers" });
-    }
-
     const termIdsArray = Array.isArray(term_ids)
       ? term_ids.map(Number).filter(id => !isNaN(id))
       : [];
-
-    const metadataFilters = typeof metadata === "object" && metadata !== null ? metadata : {};
+ 
+    let metadataFilters = {};
+    if (typeof metadata === "object" && metadata !== null) {
+      metadataFilters = metadata;
+    } else if (meta && meta.key && typeof meta.value !== "undefined") {
+      metadataFilters[meta.key] = meta.value;
+    }
 
     const posts = await getAllPosts(
       parsedOffset,
@@ -78,6 +78,7 @@ exports.getPosts = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 exports.getPostById = async (req, res) => {
   try {
