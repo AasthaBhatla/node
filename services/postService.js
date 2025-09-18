@@ -6,7 +6,7 @@ const createPost = async (postType, title, slug, authorId) => {
   `INSERT INTO posts (post_type, title, slug, author_id)
    VALUES ($1, $2, $3, $4)
    RETURNING *`,
-  [postType || 'post', title, slug, authorId]   // fallback handled in JS
+  [postType || 'post', title, slug, authorId]   
 );
     return result.rows[0];
   } catch (err) {
