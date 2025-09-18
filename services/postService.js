@@ -3,11 +3,11 @@ const pool = require("../db");
 const createPost = async (postType, title, slug, authorId) => {
   try {
     const result = await pool.query(
-      `INSERT INTO posts (post_type, title, slug, author_id)
-       VALUES (COALESCE($1, DEFAULT), $2, $3, $4)
-       RETURNING *`,
-      [postType, title, slug, authorId]
-    );
+  `INSERT INTO posts (post_type, title, slug, author_id)
+   VALUES ($1, $2, $3, $4)
+   RETURNING *`,
+  [postType || 'post', title, slug, authorId]   // fallback handled in JS
+);
     return result.rows[0];
   } catch (err) {
     console.error("Error in createPost:", err);
@@ -62,7 +62,13 @@ const getPostBySlug = async (slug) => {
   }
 };
 
-const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = []) => {
+const getAllPosts = async (
+  offset = 0,
+  limit = 10,
+  postType = "post",
+  termIds = [],
+  metadataFilters = {}
+) => {
   try {
     let query = `
       SELECT 
@@ -70,7 +76,7 @@ const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = 
         u.email AS author_email,
         COALESCE(
           json_agg(
-            json_build_object('meta_key', pm.meta_key, 'meta_value', pm.meta_value)
+            json_build_object('key', pm.key, 'value', pm.value)
           ) FILTER (WHERE pm.id IS NOT NULL), '[]'
         ) AS metadata
       FROM posts p
@@ -97,8 +103,27 @@ const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = 
       query += ` WHERE ${conditions.join(" AND ")}`;
     }
 
-    query += ` GROUP BY p.id, u.email ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+    query += ` GROUP BY p.id, u.email`;
+
+    const metadataKeys = Object.keys(metadataFilters);
+    if (metadataKeys.length > 0) {
+      let havingConditions = [];
+
+      metadataKeys.forEach((key, i) => {
+        const keyParam = `$${values.length + 1}`;
+        const valueParam = `$${values.length + 2}`;
+        values.push(key, metadataFilters[key]);
+
+        havingConditions.push(`
+          COUNT(*) FILTER (WHERE pm.key = ${keyParam} AND pm.value = ${valueParam}) > 0
+        `);
+      });
+
+      query += ` HAVING ${havingConditions.join(" AND ")}`;
+    }
+
     values.push(limit, offset);
+    query += ` ORDER BY p.created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`;
 
     const result = await pool.query(query, values);
     return result.rows;
@@ -107,6 +132,7 @@ const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = 
     throw new Error("Error fetching posts");
   }
 };
+
 
 const getMetadataByPostId = async (postId) => {
   try {
@@ -195,6 +221,32 @@ async function upsertPostMetadata(postId, key, value) {
     throw new Error("Error upserting post metadata");
   }
 }
+const addTermToPost = async (postId, termId) => {
+  try {
+    await pool.query(
+      `INSERT INTO taxonomy_relationships (type_id, type, term_id, taxonomy_id)
+       VALUES ($1, 'post', $2, (SELECT taxonomy_id FROM terms WHERE id = $2))
+       ON CONFLICT (type_id, type, term_id) DO NOTHING`,
+      [postId, termId]
+    );
+  } catch (err) {
+    console.error("Error in addTermToPost:", err);
+    throw new Error("Error adding term to post");
+  }
+};
+const removeTermsFromPost = async (postId) => {
+  try {
+    await pool.query(
+      `DELETE FROM taxonomy_relationships 
+       WHERE type_id = $1 AND type = 'post'`,
+      [postId]
+    );
+  } catch (err) {
+    console.error("Error in removeTermsFromPost:", err);
+    throw new Error("Error removing terms from post");
+  }
+};
+
 
 module.exports = {
   createPost,
@@ -208,4 +260,6 @@ module.exports = {
   upsertPostMetadata,
   deletePostById,
   deletePostMetadataById,
+  addTermToPost,
+  removeTermsFromPost
 };
