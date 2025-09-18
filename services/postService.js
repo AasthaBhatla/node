@@ -62,21 +62,42 @@ const getPostBySlug = async (slug) => {
   }
 };
 
-const getAllPosts = async (offset = 0, limit = 10, postType = "post") => {
+const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = []) => {
   try {
     let query = `
-      SELECT p.*, u.email AS author_email
+      SELECT 
+        p.*, 
+        u.email AS author_email,
+        COALESCE(
+          json_agg(
+            json_build_object('meta_key', pm.meta_key, 'meta_value', pm.meta_value)
+          ) FILTER (WHERE pm.id IS NOT NULL), '[]'
+        ) AS metadata
       FROM posts p
       JOIN users u ON p.author_id = u.id
+      LEFT JOIN post_metadata pm ON pm.post_id = p.id
+      LEFT JOIN taxonomy_relationships tr ON tr.type_id = p.id AND tr.type = 'post'
     `;
+
     const values = [];
+    const conditions = [];
 
     if (postType) {
-      query += ` WHERE p.post_type = $1`;
       values.push(postType);
+      conditions.push(`p.post_type = $${values.length}`);
     }
 
-    query += ` ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+    if (termIds.length > 0) {
+      const termPlaceholders = termIds.map((_, i) => `$${values.length + i + 1}`).join(", ");
+      conditions.push(`tr.term_id IN (${termPlaceholders})`);
+      values.push(...termIds);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+
+    query += ` GROUP BY p.id, u.email ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
     values.push(limit, offset);
 
     const result = await pool.query(query, values);
@@ -86,7 +107,6 @@ const getAllPosts = async (offset = 0, limit = 10, postType = "post") => {
     throw new Error("Error fetching posts");
   }
 };
-
 
 const getMetadataByPostId = async (postId) => {
   try {
