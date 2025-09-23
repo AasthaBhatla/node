@@ -1,3 +1,4 @@
+/*
 const pool = require('../db');
 
 const ALL_PARTNER_ROLES = ['lawyer', 'expert', 'ngo'];
@@ -140,3 +141,4 @@ module.exports = {
   getFeaturedPartners,
   getPartnerFilters
 };
+*/

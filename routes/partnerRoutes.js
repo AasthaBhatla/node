@@ -1,3 +1,4 @@
+/*
 const express = require('express');
 const router = express.Router();
 const partnerController = require('../controllers/partnerController');
@@ -13,3 +14,4 @@ router.get('/:id', authMiddleware, partnerController.getById);
 router.get('/:id/availability', authMiddleware, partnerController.checkAvailability);
 
 module.exports = router;
+*/
