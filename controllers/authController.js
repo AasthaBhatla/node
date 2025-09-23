@@ -106,15 +106,12 @@ exports.register = async (req, res) => {
   const allowed_genders = ["male", "female", "other"];
   const allowed_roles = ["client", "lawyer", "expert", "ngo", "admin"];
 
-  if (!first_name || !last_name || !dob || !gender || !role) {
+  if (!first_name || !last_name || !dob || !role) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  if (!allowed_genders.includes(gender.toLowerCase())) {
+  if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: "Invalid gender" });
-  }
-  if (!allowed_roles.includes(role.toLowerCase())) {
-    return res.status(400).json({ error: "Invalid role" });
   }
 
   try {
@@ -151,7 +148,7 @@ exports.register = async (req, res) => {
       middle_name: middle_name || "",
       last_name,
       dob,
-      gender,
+      gender: gender || "", 
     };
 
     const extraMetadata = {};

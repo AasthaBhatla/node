@@ -2,7 +2,6 @@ const pool = require("../db");
 
 const createOrderItem = async (orderId, productIdOrIds, quantities = [], notes = []) => {
   try {
-    // Case 1: productIdOrIds is a single value
     if (!Array.isArray(productIdOrIds)) {
       const result = await pool.query(
         `INSERT INTO order_items (order_id, product_id, quantity, notes)
@@ -13,7 +12,6 @@ const createOrderItem = async (orderId, productIdOrIds, quantities = [], notes =
       return result.rows;
     }
 
-    // Case 2: productIdOrIds is an array → multiple insert
     const productIds = productIdOrIds;
     const values = [];
     const placeholders = [];

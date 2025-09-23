@@ -17,6 +17,7 @@ const locationRoutes = require("./routes/locationRoutes");
 const languageRoutes = require("./routes/languageRoutes"); 
 const postRoutes = require("./routes/postRoutes");
 const optionsRoutes = require("./routes/optionsRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
@@ -31,6 +32,7 @@ app.use("/locations", locationRoutes);
 app.use("/languages", languageRoutes);
 app.use("/posts", postRoutes);
 app.use("/options", optionsRoutes);
+app.use("/orders", orderRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
