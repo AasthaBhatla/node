@@ -1,30 +1,38 @@
 const pool = require('../db');
 
-const getItemsByTerm = async (termId) => {
+const getItems = async (filters = {}) => {
   try {
-    const result = await pool.query(
-      `SELECT type, type_id FROM taxonomy_relationships WHERE term_id = $1`,
-      [termId]
-    );
-    return result.rows;
+    let query = `SELECT id, taxonomy_id, term_id, type, type_id, created_at 
+                 FROM taxonomy_relationships 
+                 WHERE 1=1`;
+    const params = [];
+    let count = 1;
+
+    if (filters.taxonomy_id) {
+      query += ` AND taxonomy_id = $${count++}`;
+      params.push(filters.taxonomy_id);
+    }
+
+    if (filters.type_id) {
+      query += ` AND type_id = $${count++}`;
+      params.push(filters.type_id);
+    }
+
+    if (filters.type) {
+      query += ` AND type = $${count++}`;
+      params.push(filters.type);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const { rows } = await pool.query(query, params);
+    return rows;
   } catch (err) {
-    console.error('Error in getItemsByTerm:', err);
-    throw new Error('Error fetching items by term');
+    console.error('Error in getItems:', err);
+    throw new Error('Error fetching taxonomy items');
   }
 };
 
-const getItemsByTaxonomy = async (taxonomyId) => {
-  try {
-    const result = await pool.query(
-      `SELECT type, type_id FROM taxonomy_relationships WHERE taxonomy_id = $1`,
-      [taxonomyId]
-    );
-    return result.rows;
-  } catch (err) {
-    console.error('Error in getItemsByTaxonomy:', err);
-    throw new Error('Error fetching items by taxonomy');
-  }
-};
 const createRelationship = async (termId, taxonomyId, type, typeId) => {
   try {
     const query = `
@@ -41,6 +49,49 @@ const createRelationship = async (termId, taxonomyId, type, typeId) => {
   }
 };
 
+const updateRelationship = async (id, updates) => {
+  try {
+    const fields = [];
+    const values = [];
+    let count = 1;
+
+    if (updates.term_id) {
+      fields.push(`term_id = $${count++}`);
+      values.push(updates.term_id);
+    }
+    if (updates.taxonomy_id) {
+      fields.push(`taxonomy_id = $${count++}`);
+      values.push(updates.taxonomy_id);
+    }
+    if (updates.type) {
+      fields.push(`type = $${count++}`);
+      values.push(updates.type);
+    }
+    if (updates.type_id) {
+      fields.push(`type_id = $${count++}`);
+      values.push(updates.type_id);
+    }
+
+    if (fields.length === 0) {
+      throw new Error('No fields to update');
+    }
+
+    const query = `
+      UPDATE taxonomy_relationships
+      SET ${fields.join(', ')}
+      WHERE id = $${count}
+      RETURNING *;
+    `;
+    values.push(id);
+
+    const { rows } = await pool.query(query, values);
+    return rows[0] || null;
+  } catch (err) {
+    console.error('Error in updateRelationship:', err);
+    throw new Error('Error updating relationship');
+  }
+};
+
 const deleteRelationship = async (id) => {
   try {
     const query = `
@@ -49,7 +100,7 @@ const deleteRelationship = async (id) => {
       RETURNING *;
     `;
     const { rows } = await pool.query(query, [id]);
-    return rows[0] || null;  // return deleted row or null if not found
+    return rows[0] || null;  
   } catch (err) {
     console.error('Error in deleteRelationship:', err);
     throw new Error('Error deleting relationship');
@@ -57,8 +108,8 @@ const deleteRelationship = async (id) => {
 };
 
 module.exports = {
-  getItemsByTerm,
-  getItemsByTaxonomy,
+  getItems,
   createRelationship,
+  updateRelationship,
   deleteRelationship
 };

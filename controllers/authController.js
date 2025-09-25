@@ -102,11 +102,9 @@ exports.register = async (req, res) => {
   } = req.body;
 
   const phone = normalizePhone(raw_phone);
-
   const allowed_genders = ["male", "female", "other"];
-  const allowed_roles = ["client", "lawyer", "expert", "ngo", "admin"];
 
-  if (!first_name || !last_name || !dob || !role) {
+  if (!first_name || !dob || !role) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -146,9 +144,9 @@ exports.register = async (req, res) => {
     const baseMetadata = {
       first_name,
       middle_name: middle_name || "",
-      last_name,
+      last_name: last_name || "",
       dob,
-      gender: gender || "", 
+      gender: gender || "",
     };
 
     const extraMetadata = {};

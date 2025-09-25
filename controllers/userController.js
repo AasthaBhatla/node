@@ -155,14 +155,9 @@ exports.updateUserMetaByAdmin = async (req, res) => {
   } = req.body;
 
   const allowed_genders = ['male', 'female', 'other'];
-  const allowed_roles = ['client', 'lawyer', 'expert', 'ngo', 'admin'];
 
   if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
-  }
-
-  if (role && !allowed_roles.includes(role.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid role' });
   }
 
   if (language_id && typeof language_id !== 'number') {
@@ -184,7 +179,6 @@ exports.updateUserMetaByAdmin = async (req, res) => {
 
     const user = await getUserById(target_user_id);
     if (!user) return res.status(404).json({ error: 'Target user not found' });
-
 
     await updateUserMetadata(target_user_id, {
       ...(first_name && { first_name }),
