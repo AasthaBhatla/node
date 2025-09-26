@@ -3,30 +3,15 @@ const pool = require("../db");
 const createPost = async (postType, title, slug, authorId) => {
   try {
     const result = await pool.query(
-  `INSERT INTO posts (post_type, title, slug, author_id)
-   VALUES ($1, $2, $3, $4)
-   RETURNING *`,
-  [postType || 'post', title, slug, authorId]   
-);
+      `INSERT INTO posts (post_type, title, slug, author_id)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [postType || "post", title, slug, authorId]
+    );
     return result.rows[0];
   } catch (err) {
     console.error("Error in createPost:", err);
     throw new Error("Error creating post");
-  }
-};
-
-const createPostMetadata = async (postId, key, value) => {
-  try {
-    const result = await pool.query(
-      `INSERT INTO post_metadata (post_id, key, value)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [postId, key, value]
-    );
-    return result.rows[0];
-  } catch (err) {
-    console.error("Error in createPostMetadata:", err);
-    throw new Error("Error creating post metadata");
   }
 };
 
@@ -62,13 +47,7 @@ const getPostBySlug = async (slug) => {
   }
 };
 
-const getAllPosts = async (
-  offset = 0,
-  limit = 10,
-  postType = "post",
-  termIds = [],
-  metadataFilters = {}
-) => {
+const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = [], metadataFilters = {}) => {
   try {
     let query = `
       SELECT 
@@ -99,26 +78,19 @@ const getAllPosts = async (
       values.push(...termIds);
     }
 
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(" AND ")}`;
-    }
+    if (conditions.length > 0) query += ` WHERE ${conditions.join(" AND ")}`;
 
     query += ` GROUP BY p.id, u.email`;
 
     const metadataKeys = Object.keys(metadataFilters);
     if (metadataKeys.length > 0) {
-      let havingConditions = [];
-
-      metadataKeys.forEach((key, i) => {
+      const havingConditions = [];
+      metadataKeys.forEach((key) => {
         const keyParam = `$${values.length + 1}`;
         const valueParam = `$${values.length + 2}`;
         values.push(key, metadataFilters[key]);
-
-        havingConditions.push(`
-          COUNT(*) FILTER (WHERE pm.key = ${keyParam} AND pm.value = ${valueParam}) > 0
-        `);
+        havingConditions.push(`COUNT(*) FILTER (WHERE pm.key = ${keyParam} AND pm.value = ${valueParam}) > 0`);
       });
-
       query += ` HAVING ${havingConditions.join(" AND ")}`;
     }
 
@@ -133,13 +105,9 @@ const getAllPosts = async (
   }
 };
 
-
 const getMetadataByPostId = async (postId) => {
   try {
-    const result = await pool.query(
-      `SELECT * FROM post_metadata WHERE post_id = $1`,
-      [postId]
-    );
+    const result = await pool.query(`SELECT * FROM post_metadata WHERE post_id = $1`, [postId]);
     return result.rows;
   } catch (err) {
     console.error("Error in getMetadataByPostId:", err);
@@ -150,10 +118,7 @@ const getMetadataByPostId = async (postId) => {
 const updatePostById = async (id, postType, title, slug) => {
   try {
     const result = await pool.query(
-      `UPDATE posts
-       SET post_type = $1, title = $2, slug = $3
-       WHERE id = $4
-       RETURNING *`,
+      `UPDATE posts SET post_type = $1, title = $2, slug = $3 WHERE id = $4 RETURNING *`,
       [postType, title, slug, id]
     );
     return result.rows[0] || null;
@@ -163,28 +128,9 @@ const updatePostById = async (id, postType, title, slug) => {
   }
 };
 
-const updatePostMetadata = async (id, key, value) => {
-  try {
-    const result = await pool.query(
-      `UPDATE post_metadata
-       SET key = $1, value = $2
-       WHERE id = $3
-       RETURNING *`,
-      [key, value, id]
-    );
-    return result.rows[0] || null;
-  } catch (err) {
-    console.error("Error in updatePostMetadata:", err);
-    throw new Error("Error updating post metadata");
-  }
-};
-
 const deletePostById = async (id) => {
   try {
-    const result = await pool.query(
-      `DELETE FROM posts WHERE id = $1 RETURNING *`,
-      [id]
-    );
+    const result = await pool.query(`DELETE FROM posts WHERE id = $1 RETURNING *`, [id]);
     return result.rows[0] || null;
   } catch (err) {
     console.error("Error in deletePostById:", err);
@@ -194,10 +140,7 @@ const deletePostById = async (id) => {
 
 const deletePostMetadataById = async (id) => {
   try {
-    const result = await pool.query(
-      `DELETE FROM post_metadata WHERE id = $1 RETURNING *`,
-      [id]
-    );
+    const result = await pool.query(`DELETE FROM post_metadata WHERE id = $1 RETURNING *`, [id]);
     return result.rows[0] || null;
   } catch (err) {
     console.error("Error in deletePostMetadataById:", err);
@@ -205,22 +148,22 @@ const deletePostMetadataById = async (id) => {
   }
 };
 
-async function upsertPostMetadata(postId, key, value) {
+const upsertPostMetadata = async (postId, key, value) => {
   try {
     const query = `
       INSERT INTO post_metadata (post_id, key, value)
       VALUES ($1, $2, $3)
-      ON CONFLICT (post_id, key)
-      DO UPDATE SET value = EXCLUDED.value
+      ON CONFLICT (post_id, key) DO UPDATE SET value = EXCLUDED.value
       RETURNING post_id, key, value;
-      `;
+    `;
     const { rows } = await pool.query(query, [postId, key, value]);
     return rows[0];
   } catch (err) {
-    console.error("Error in deletePostMetadataById:", err);
+    console.error("Error in upsertPostMetadata:", err);
     throw new Error("Error upserting post metadata");
   }
-}
+};
+
 const addTermToPost = async (postId, termId) => {
   try {
     await pool.query(
@@ -234,32 +177,26 @@ const addTermToPost = async (postId, termId) => {
     throw new Error("Error adding term to post");
   }
 };
+
 const removeTermsFromPost = async (postId) => {
   try {
-    await pool.query(
-      `DELETE FROM taxonomy_relationships 
-       WHERE type_id = $1 AND type = 'post'`,
-      [postId]
-    );
+    await pool.query(`DELETE FROM taxonomy_relationships WHERE type_id = $1 AND type = 'post'`, [postId]);
   } catch (err) {
     console.error("Error in removeTermsFromPost:", err);
     throw new Error("Error removing terms from post");
   }
 };
 
-
 module.exports = {
   createPost,
-  createPostMetadata,
   getPostById,
   getPostBySlug,
   getAllPosts,
   getMetadataByPostId,
   updatePostById,
-  updatePostMetadata,
   upsertPostMetadata,
   deletePostById,
   deletePostMetadataById,
   addTermToPost,
-  removeTermsFromPost
+  removeTermsFromPost,
 };

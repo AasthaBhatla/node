@@ -7,16 +7,11 @@ router.use(authMiddleware);
 
 router.get("/", postController.getPosts);
 router.get("/slug/:slug", postController.getPostBySlug);
-router.get("/:id/metadata", postController.getMetadataByPostId);
-router.get("/:id", postController.getPostById);
-
+router.get("/:id", postController.getPostId); 
 router.post("/", postController.createPost);
-// router.post("/:id/metadata", postController.createPostMetadata);
+router.post("/:id", postController.updatePost); 
 router.post("/:id/metadata", postController.upsertPostMetadata);
-router.post("/:id", postController.updatePost);
-// router.post("/metadata/:id", postController.updatePostMetadata);
-
-router.delete("/:id", postController.deletePost);
 router.delete("/metadata/:id", postController.deletePostMetadata);
+router.delete("/:id", postController.deletePost);
 
 module.exports = router;

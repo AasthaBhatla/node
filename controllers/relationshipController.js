@@ -1,4 +1,4 @@
-const { getItems, createRelationship, updateRelationship, deleteRelationship } = require('../services/taxonomyService');
+const { getItems, createRelationship, updateRelationship, deleteRelationship } = require('../services/relationshipService');
 
 exports.getItems = async (req, res) => {
   try {
