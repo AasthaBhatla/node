@@ -8,6 +8,7 @@ router.post('/verify-otp', authController.verifyOtp);
 router.post('/register', authMiddleware, authController.register);
 router.post('/logout', authMiddleware, authController.logout);
 router.post('/resend-otp', authController.resendOtp);
+router.post("/create", authController.createUserWithProfile);
 
 
 module.exports = router;

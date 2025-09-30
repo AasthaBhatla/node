@@ -228,3 +228,70 @@ exports.resendOtp = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+exports.createUserWithProfile = async (req, res) => {
+  try {
+    const {
+      email,
+      phone: raw_phone,
+      first_name,
+      middle_name,
+      last_name,
+      dob,
+      gender,
+      role,
+      profile_pic_url,
+      ...extraMetadata
+    } = req.body;
+
+    if (!email && !raw_phone) {
+      return res.status(400).json({ error: "Email or phone is required" });
+    }
+    if (!first_name || !dob || !role) {
+      return res
+        .status(400)
+        .json({ error: "first_name, dob, and role are required" });
+    }
+
+    const phone = normalizePhone(raw_phone);
+
+    let user = await getUserByEmailOrPhone(email, phone);
+    if (user) {
+      return res.status(409).json({ error: "User already exists" });
+    }
+
+    user = await insertUser(email, phone);
+
+    await updateUserRole(user.id, role.toLowerCase());
+    await markUserAsRegistered(user.id);
+
+    const metadataEntries = [
+      { key: "first_name", value: first_name },
+      { key: "middle_name", value: middle_name || "" },
+      { key: "last_name", value: last_name || "" },
+      { key: "dob", value: dob },
+      { key: "gender", value: gender || "" },
+      { key: "profile_pic_url", value: profile_pic_url || "" },
+      ...Object.entries(extraMetadata).map(([key, value]) => ({ key, value })),
+    ];
+
+    for (let entry of metadataEntries) {
+      await updateUserMetadata(user.id, entry);
+    }
+
+    const token = jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET || "defaultsecret",
+      { expiresIn: "1h" }
+    );
+
+    res.status(201).json({
+      message: "User created successfully",
+      user_id: user.id,
+      token,
+      status: "registered",
+    });
+  } catch (err) {
+    console.error("Create user error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
