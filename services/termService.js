@@ -1,154 +1,172 @@
 const pool = require('../db');
 
-const createTerm = async (taxonomyId, slug, title, parentId = null) => {
+const createTerms = async (terms) => {
   try {
-    const result = await pool.query(
-      `INSERT INTO terms (taxonomy_id, slug, title, parent_id) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING *`,
-      [taxonomyId, slug, title, parentId]
-    );
-    return result.rows[0];
+    const values = [];
+    const placeholders = terms.map((t, i) => {
+      const idx = i * 4;
+      values.push(t.taxonomyId, t.slug, t.title, t.parentId || null);
+      return `($${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4})`;
+    }).join(', ');
+
+    const query = `
+      INSERT INTO terms (taxonomy_id, slug, title, parent_id)
+      VALUES ${placeholders}
+      RETURNING *;
+    `;
+    const { rows } = await pool.query(query, values);
+    return rows;
   } catch (err) {
-    console.error('Error in createTerm:', err);
-    throw new Error('Error creating term');
+    console.error('Error in createTerms:', err);
+    throw new Error('Error creating terms');
   }
 };
 
-const getTermById = async (id) => {
+const getTermsByIds = async (ids) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM terms WHERE id = $1`,
-      [id]
-    );
-    return result.rows[0];
-  } catch (err) {
-    throw new Error('Error fetching term by ID');
-  }
-};
-
-const getTermBySlug = async (slug) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM terms WHERE slug = $1`,
-      [slug]
-    );
-    return result.rows[0];
-  } catch (err) {
-    throw new Error('Error fetching term by slug');
-  }
-};
-
-const getTermsByTaxonomyId = async (taxonomyId) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM terms WHERE taxonomy_id = $1`,
-      [taxonomyId]
+      `SELECT * FROM terms WHERE id = ANY($1::int[])`,
+      [ids]
     );
     return result.rows;
   } catch (err) {
-    throw new Error('Error fetching terms by taxonomy ID');
+    console.error('Error in getTermsByIds:', err);
+    throw new Error('Error fetching terms by IDs');
   }
 };
 
-const getTermsByTaxonomySlug = async (slug) => {
+const getTermsBySlugs = async (slugs) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM terms WHERE slug = ANY($1::text[])`,
+      [slugs]
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('Error in getTermsBySlugs:', err);
+    throw new Error('Error fetching terms by slugs');
+  }
+};
+
+const getTermsByTaxonomyIds = async (taxonomyIds) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM terms WHERE taxonomy_id = ANY($1::int[])`,
+      [taxonomyIds]
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('Error in getTermsByTaxonomyIds:', err);
+    throw new Error('Error fetching terms by taxonomy IDs');
+  }
+};
+
+const getTermsByTaxonomySlugs = async (slugs) => {
   try {
     const result = await pool.query(
       `SELECT tr.*
        FROM terms tr
        JOIN taxonomy t ON tr.taxonomy_id = t.id
-       WHERE t.slug = $1`,
-      [slug]
+       WHERE t.slug = ANY($1::text[])`,
+      [slugs]
     );
     return result.rows;
   } catch (err) {
-    throw new Error('Error fetching terms by taxonomy slug');
+    console.error('Error in getTermsByTaxonomySlugs:', err);
+    throw new Error('Error fetching terms by taxonomy slugs');
   }
 };
 
-const updateTermByTaxonomyId = async (taxonomyId, termId, slug, title, parentId = null) => {
+const updateTermsByTaxonomyId = async (taxonomyId, terms) => {
   try {
-    if (parentId && parseInt(parentId) === parseInt(termId)) {
-      throw new Error('A term cannot be its own parent');
-    }
-
-    if (parentId) {
-      const parentCheck = await pool.query(
-        `SELECT id FROM terms WHERE id = $1 AND taxonomy_id = $2`,
-        [parentId, taxonomyId]
-      );
-      if (parentCheck.rows.length === 0) {
-        throw new Error('Parent term not found in same taxonomy');
+    const updatedTerms = [];
+    for (const t of terms) {
+      if (t.parentId && parseInt(t.parentId) === parseInt(t.termId)) {
+        throw new Error('A term cannot be its own parent');
       }
-    }
 
-    const query = `
-      UPDATE terms
-      SET slug = $3, title = $4, parent_id = $5, updated_at = NOW()
-      WHERE taxonomy_id = $1 AND id = $2
-      RETURNING *;
-    `;
-    const values = [taxonomyId, termId, slug, title, parentId || null];
-    const { rows } = await pool.query(query, values);
-    return rows[0] || null;
+      if (t.parentId) {
+        const parentCheck = await pool.query(
+          `SELECT id FROM terms WHERE id = $1 AND taxonomy_id = $2`,
+          [t.parentId, taxonomyId]
+        );
+        if (parentCheck.rows.length === 0) {
+          throw new Error('Parent term not found in same taxonomy');
+        }
+      }
+
+      const query = `
+        UPDATE terms
+        SET slug = $3, title = $4, parent_id = $5, updated_at = NOW()
+        WHERE taxonomy_id = $1 AND id = $2
+        RETURNING *;
+      `;
+      const values = [taxonomyId, t.termId, t.slug, t.title, t.parentId || null];
+      const { rows } = await pool.query(query, values);
+      if (rows[0]) updatedTerms.push(rows[0]);
+    }
+    return updatedTerms;
   } catch (err) {
-    console.error('Error in updateTermByTaxonomyId:', err);
+    console.error('Error in updateTermsByTaxonomyId:', err);
     throw err;
   }
 };
 
-const updateTermById = async (id, slug, title, parentId = null) => {
+const updateTermsByIds = async (terms) => {
   try {
-    if (parentId && parseInt(parentId) === parseInt(id)) {
-      throw new Error('A term cannot be its own parent');
-    }
-
-    if (parentId) {
-      const parentCheck = await pool.query(
-        `SELECT id FROM terms WHERE id = $1`,
-        [parentId]
-      );
-      if (parentCheck.rows.length === 0) {
-        throw new Error('Parent term not found');
+    const updatedTerms = [];
+    for (const t of terms) {
+      if (t.parentId && parseInt(t.parentId) === parseInt(t.id)) {
+        throw new Error('A term cannot be its own parent');
       }
+
+      if (t.parentId) {
+        const parentCheck = await pool.query(
+          `SELECT id FROM terms WHERE id = $1`,
+          [t.parentId]
+        );
+        if (parentCheck.rows.length === 0) {
+          throw new Error('Parent term not found');
+        }
+      }
+
+      const query = `
+        UPDATE terms
+        SET slug = $1, title = $2, parent_id = $3, updated_at = NOW()
+        WHERE id = $4
+        RETURNING *;
+      `;
+      const values = [t.slug, t.title, t.parentId || null, t.id];
+      const { rows } = await pool.query(query, values);
+      if (rows[0]) updatedTerms.push(rows[0]);
     }
-
-    const query = `
-      UPDATE terms
-      SET slug = $1, title = $2, parent_id = $3, updated_at = NOW()
-      WHERE id = $4
-      RETURNING *;
-    `;
-    const values = [slug, title, parentId || null, id];
-
-    const { rows } = await pool.query(query, values);
-    return rows[0] || null;
+    return updatedTerms;
   } catch (err) {
-    console.error('Error in updateTermById:', err);
+    console.error('Error in updateTermsByIds:', err);
     throw err;
   }
 };
 
-const deleteTermById = async (id) => {
+const deleteTermsByIds = async (ids) => {
   try {
     const result = await pool.query(
-      `DELETE FROM terms WHERE id = $1 RETURNING *`,
-      [id]
+      `DELETE FROM terms WHERE id = ANY($1::int[]) RETURNING *`,
+      [ids]
     );
-    return result.rows[0] || null;
+    return result.rows;
   } catch (err) {
-    console.error('Error in deleteTermById:', err);
-    throw new Error('Error deleting term by ID');
+    console.error('Error in deleteTermsByIds:', err);
+    throw new Error('Error deleting terms by IDs');
   }
 };
 
 module.exports = {
-  createTerm,
-  getTermById,
-  getTermBySlug,
-  getTermsByTaxonomyId,
-  getTermsByTaxonomySlug,
-  updateTermByTaxonomyId,
-  updateTermById,
-  deleteTermById
+  createTerms,
+  getTermsByIds,
+  getTermsBySlugs,
+  getTermsByTaxonomyIds,
+  getTermsByTaxonomySlugs,
+  updateTermsByTaxonomyId,
+  updateTermsByIds,
+  deleteTermsByIds
 };

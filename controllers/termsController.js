@@ -1,8 +1,8 @@
 const {
-  createTerm,
-  getTermById,
-  getTermsByTaxonomyId,
-  updateTermById
+  createTerms,
+  getTermsByIds,
+  getTermsByTaxonomyIds,
+  updateTermsByIds
 } = require('../services/termService');
 
 exports.create = async (req, res) => {
@@ -12,67 +12,86 @@ exports.create = async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
-    const { taxonomyId, slug, title, parentId } = req.body;
-    if (!taxonomyId || !slug || !title) {
-      return res.status(400).json({ error: 'taxonomyId, slug, and title are required' });
+    const terms = req.body; 
+    if (!Array.isArray(terms) || terms.length === 0) {
+      return res.status(400).json({ error: 'An array of terms is required' });
     }
 
-    const term = await createTerm(taxonomyId, slug, title, parentId || null);
-    res.status(201).json(term);
+    for (const t of terms) {
+      if (!t.taxonomyId || !t.slug || !t.title) {
+        return res.status(400).json({ error: 'taxonomyId, slug, and title are required for each term' });
+      }
+    }
+
+    const created = await createTerms(terms);
+    res.status(201).json(created);
   } catch (err) {
-    console.error(err);
+    console.error('Create Terms Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-exports.getTermById = async (req, res) => {
+exports.getByIds = async (req, res) => {
   try {
-    const { id } = req.params;
-    const term = await getTermById(id);
-    if (!term) {
-      return res.status(404).json({ error: 'Term not found' });
+    const { ids } = req.body; 
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be an array' });
     }
-    res.json(term);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
 
-exports.getTermsByTaxonomyId = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const terms = await getTermsByTaxonomyId(id);
+    const terms = await getTermsByIds(ids);
+    if (!terms || terms.length === 0) {
+      return res.status(404).json({ error: 'No terms found' });
+    }
+
     res.json(terms);
   } catch (err) {
-    console.error(err);
+    console.error('Get Terms by IDs Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-exports.updateById = async (req, res) => {
+exports.getByTaxonomyIds = async (req, res) => {
+  try {
+    const { taxonomyIds } = req.body; 
+    if (!Array.isArray(taxonomyIds) || taxonomyIds.length === 0) {
+      return res.status(400).json({ error: 'taxonomyIds must be an array' });
+    }
+
+    const terms = await getTermsByTaxonomyIds(taxonomyIds);
+    res.json(terms);
+  } catch (err) {
+    console.error('Get Terms by Taxonomy IDs Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+exports.updateByIds = async (req, res) => {
   try {
     const user = req.user;
     if (user.role.toLowerCase() !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admins only.' });
     }
 
-    const { id } = req.params;
-    const { slug, title, parentId } = req.body;
-
-    if (!slug || !title) {
-      return res.status(400).json({ error: 'slug and title are required' });
+    const terms = req.body; 
+    if (!Array.isArray(terms) || terms.length === 0) {
+      return res.status(400).json({ error: 'An array of terms is required' });
     }
 
-    const updatedTerm = await updateTermById(id, slug, title, parentId || null);
-
-    if (!updatedTerm) {
-      return res.status(404).json({ error: 'Term not found' });
+    for (const t of terms) {
+      if (!t.id || !t.slug || !t.title) {
+        return res.status(400).json({ error: 'id, slug, and title are required for each term' });
+      }
     }
 
-    res.json(updatedTerm);
+    const updated = await updateTermsByIds(terms);
+
+    if (!updated || updated.length === 0) {
+      return res.status(404).json({ error: 'No terms updated' });
+    }
+
+    res.json(updated);
   } catch (err) {
-    console.error('Update Term by ID Error:', err);
+    console.error('Update Terms by IDs Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -3,10 +3,9 @@ const termsRouter = express.Router();
 const termsController = require('../controllers/termsController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
-termsRouter.get('/taxonomy/:id/terms', termsController.getTermsByTaxonomyId);  
-termsRouter.get('/:id', termsController.getTermById);                    
-termsRouter.post('/', authMiddleware, termsController.create);          
-termsRouter.post('/:id', authMiddleware, termsController.updateById);
-     
+termsRouter.post('/taxonomy/terms', termsController.getByTaxonomyIds);
+termsRouter.post('/ids', termsController.getByIds);
+termsRouter.post('/', authMiddleware, termsController.create);
+termsRouter.put('/', authMiddleware, termsController.updateByIds);
 
 module.exports = termsRouter;
