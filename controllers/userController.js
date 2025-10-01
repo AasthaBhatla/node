@@ -98,7 +98,6 @@ exports.getUsers = async (req, res) => {
       email,
       phone,
       search,
-      with_metadata,
       metaQuery
     } = req.body;
 
@@ -112,8 +111,7 @@ exports.getUsers = async (req, res) => {
       email,
       phone,
       search,
-      with_metadata: with_metadata === true || with_metadata === 'true',
-      meta_query: metaQuery,
+      metaQuery,
     };
 
     const users = await getUsers(filters);
@@ -151,10 +149,14 @@ exports.updateUserMetaByAdmin = async (req, res) => {
     role,
     language_id,
     add_terms,
-    remove_terms
+    remove_terms,
+    email,
+    phone,
+    status
   } = req.body;
 
   const allowed_genders = ['male', 'female', 'other'];
+  const allowed_statuses = ['new', 'registered', 'verified', 'blocked']; 
 
   if (gender && !allowed_genders.includes(gender.toLowerCase())) {
     return res.status(400).json({ error: 'Invalid gender' });
@@ -170,6 +172,10 @@ exports.updateUserMetaByAdmin = async (req, res) => {
 
   if (remove_terms && !Array.isArray(remove_terms)) {
     return res.status(400).json({ error: 'remove_terms must be an array of term IDs' });
+  }
+
+  if (status && !allowed_statuses.includes(status.toLowerCase())) {
+    return res.status(400).json({ error: 'Invalid status' });
   }
 
   try {
@@ -196,6 +202,14 @@ exports.updateUserMetaByAdmin = async (req, res) => {
       await updateUserLanguage(target_user_id, language_id);
     }
 
+    if (email || phone || status) {
+      await updateUser(target_user_id, {
+        ...(email && { email }),
+        ...(phone && { phone }),
+        ...(status && { status: status.toLowerCase() })
+      });
+    }
+
     if (add_terms?.length) {
       await addUserTerms(target_user_id, add_terms);
     }
@@ -203,7 +217,7 @@ exports.updateUserMetaByAdmin = async (req, res) => {
       await removeUserTerms(target_user_id, remove_terms);
     }
 
-    res.json({ message: 'User metadata updated by admin successfully' });
+    res.json({ message: 'User updated by admin successfully' });
   } catch (err) {
     console.error('Update user meta by admin error:', err);
     res.status(500).json({ error: 'Server error' });

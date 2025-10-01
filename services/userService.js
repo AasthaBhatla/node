@@ -151,7 +151,6 @@ const getUsers = async (filters = {}) => {
     phone,
     metaQuery,
     search,
-    withMetadata = false,
   } = filters;
 
   const values = [];
@@ -212,11 +211,9 @@ const getUsers = async (filters = {}) => {
     const result = await pool.query(query, values);
     const users = result.rows;
 
-    if (!withMetadata) return users;
+    if (users.length === 0) return users;
 
     const userIds = users.map((u) => u.id);
-    if (userIds.length === 0) return users;
-
     const metaResult = await pool.query(
       `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
       [userIds]
@@ -387,32 +384,41 @@ const getUserDocuments = async (userId) => {
     throw new Error('Error fetching user documents');
   }
 };
+
 const updateUser = async (userId, fields) => {
   const updates = [];
   const values = [];
 
   if (fields.email) {
     updates.push(`email = $${values.length + 1}`);
-    values.push(fields.email);
+    values.push(fields.email.toLowerCase()); 
   }
 
   if (fields.phone) {
+    const normalizedPhone = normalizePhone(fields.phone);
     updates.push(`phone = $${values.length + 1}`);
-    values.push(fields.phone);
+    values.push(normalizedPhone);
+  }
+
+  if (fields.status) {
+    updates.push(`status = $${values.length + 1}`);
+    values.push(fields.status.toLowerCase());
   }
 
   if (updates.length === 0) return;
 
   values.push(userId);
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length}`;
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING id, email, phone, status, role`;
 
   try {
-    await pool.query(query, values);
+    const result = await pool.query(query, values);
+    return result.rows[0];
   } catch (err) {
     console.error('Error updating user:', err);
-    throw err; 
+    throw new Error('Error updating user');
   }
 };
+
 const updateUserLanguage = async (userId, languageId) => {
   try {
     const lang = await pool.query(`SELECT id FROM languages WHERE id = $1`, [languageId]);
