@@ -32,11 +32,12 @@ exports.getById = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const user = req.user;
-    if (user.role.toLowerCase() !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admins only.' });
-    }
 
-    let { slug, type, title } = req.body;
+    if (!user) return res.status(401).json({ error: 'User not authenticated' });
+    if (!user.role || user.role.toLowerCase() !== 'admin') 
+      return res.status(403).json({ error: 'Access denied. Admins only.' });
+
+    let { slug, title } = req.body;
 
     if (!slug || slug.includes(' ')) {
       return res.status(400).json({ error: 'Slug is required and must not contain spaces.' });
@@ -44,19 +45,12 @@ exports.create = async (req, res) => {
 
     slug = slug.toLowerCase().replace(/\s+/g, '-');
 
-    if (typeof type === 'undefined' || type === null) {
-      type = [];
-    } else if (!Array.isArray(type)) {
-      return res.status(400).json({ error: 'Type must be an array of strings.' });
-    }
-
-    const newTaxonomy = await createTaxonomy(slug, title,type);
+    const newTaxonomy = await createTaxonomy(slug, title);
     res.status(201).json(newTaxonomy);
 
   } catch (err) {
-    if (err.code === '23505') { 
-      return res.status(409).json({ error: 'Slug already exists. Choose a unique slug.' });
-    }
+    if (err.code === '23505') 
+      return res.status(409).json({ error: 'Slug already exists.' });
     console.error('Create Taxonomy Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }

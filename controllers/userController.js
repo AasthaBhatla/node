@@ -140,87 +140,41 @@ exports.getUserById = async (req, res) => {
 exports.updateUserMetaByAdmin = async (req, res) => {
   const requesting_user = req.user;
   const target_user_id = req.params.id;
-  const {
-    first_name,
-    middle_name,
-    last_name,
-    dob,
-    gender,
-    role,
-    language_id,
-    add_terms,
-    remove_terms,
-    email,
-    phone,
-    status
-  } = req.body;
 
-  const allowed_genders = ['male', 'female', 'other'];
-  const allowed_statuses = ['new', 'registered', 'verified', 'blocked']; 
-
-  if (gender && !allowed_genders.includes(gender.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid gender' });
+  if (!requesting_user || requesting_user.role !== "admin") {
+    return res.status(403).json({ error: "Only admins can update users" });
   }
 
-  if (language_id && typeof language_id !== 'number') {
-    return res.status(400).json({ error: 'language_id must be a number' });
-  }
+  const { role, status, email, phone, ...metadata } = req.body;
 
-  if (add_terms && !Array.isArray(add_terms)) {
-    return res.status(400).json({ error: 'add_terms must be an array of term IDs' });
-  }
-
-  if (remove_terms && !Array.isArray(remove_terms)) {
-    return res.status(400).json({ error: 'remove_terms must be an array of term IDs' });
-  }
+  const allowed_statuses = ["new", "registered", "verified", "blocked"];
 
   if (status && !allowed_statuses.includes(status.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid status' });
+    return res.status(400).json({ error: "Invalid status" });
   }
 
   try {
-    if (requesting_user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only admins can update other users\' metadata' });
-    }
-
     const user = await getUserById(target_user_id);
-    if (!user) return res.status(404).json({ error: 'Target user not found' });
+    if (!user) return res.status(404).json({ error: "Target user not found" });
 
-    await updateUserMetadata(target_user_id, {
-      ...(first_name && { first_name }),
-      ...(middle_name && { middle_name }),
-      ...(last_name && { last_name }),
-      ...(dob && { dob }),
-      ...(gender && { gender: gender.toLowerCase() })
-    });
-
-    if (role) {
-      await updateUserRole(target_user_id, role.toLowerCase());
+    if (Object.keys(metadata).length > 0) {
+      await updateUserMetadata(target_user_id, metadata);
     }
 
-    if (language_id) {
-      await updateUserLanguage(target_user_id, language_id);
+    const userUpdateFields = {};
+    if (role) userUpdateFields.role = role.toLowerCase();
+    if (status) userUpdateFields.status = status.toLowerCase();
+    if (email) userUpdateFields.email = email;
+    if (phone) userUpdateFields.phone = phone;
+
+    if (Object.keys(userUpdateFields).length > 0) {
+      await updateUser(target_user_id, userUpdateFields);
     }
 
-    if (email || phone || status) {
-      await updateUser(target_user_id, {
-        ...(email && { email }),
-        ...(phone && { phone }),
-        ...(status && { status: status.toLowerCase() })
-      });
-    }
-
-    if (add_terms?.length) {
-      await addUserTerms(target_user_id, add_terms);
-    }
-    if (remove_terms?.length) {
-      await removeUserTerms(target_user_id, remove_terms);
-    }
-
-    res.json({ message: 'User updated by admin successfully' });
+    res.json({ message: "User updated by admin successfully" });
   } catch (err) {
-    console.error('Update user meta by admin error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Update user meta by admin error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 };
 

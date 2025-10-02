@@ -391,7 +391,7 @@ const updateUser = async (userId, fields) => {
 
   if (fields.email) {
     updates.push(`email = $${values.length + 1}`);
-    values.push(fields.email.toLowerCase()); 
+    values.push(fields.email.toLowerCase());
   }
 
   if (fields.phone) {
@@ -403,6 +403,11 @@ const updateUser = async (userId, fields) => {
   if (fields.status) {
     updates.push(`status = $${values.length + 1}`);
     values.push(fields.status.toLowerCase());
+  }
+
+  if (fields.role) {
+    updates.push(`role = $${values.length + 1}`);
+    values.push(fields.role.toLowerCase());
   }
 
   if (updates.length === 0) return;
@@ -433,6 +438,7 @@ const updateUserLanguage = async (userId, languageId) => {
     throw new Error('Error updating user language');
   }
 };
+
 const addUserTerms = async (userId, termIds) => {
   const client = await pool.connect();
   try {

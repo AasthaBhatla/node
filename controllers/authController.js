@@ -91,26 +91,14 @@ exports.verifyOtp = async (req, res) => {
 
 exports.register = async (req, res) => {
   const {
-    first_name,
-    middle_name,
-    last_name,
-    dob,
-    gender,
     role,
+    status,
     email,
     phone: raw_phone,
+    ...rest
   } = req.body;
 
   const phone = normalizePhone(raw_phone);
-  const allowed_genders = ["male", "female", "other"];
-
-  if (!first_name || !dob || !role) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  if (gender && !allowed_genders.includes(gender.toLowerCase())) {
-    return res.status(400).json({ error: "Invalid gender" });
-  }
 
   try {
     const user = req.user;
@@ -137,44 +125,20 @@ exports.register = async (req, res) => {
     const userUpdateFields = {};
     if (!existingUser.email && email) userUpdateFields.email = email;
     if (!existingUser.phone && phone) userUpdateFields.phone = phone;
+    if (role) userUpdateFields.role = role.toLowerCase();
+    if (status) userUpdateFields.status = status;
+
     if (Object.keys(userUpdateFields).length > 0) {
       await updateUser(user.id, userUpdateFields);
     }
 
-    const baseMetadata = {
-      first_name,
-      middle_name: middle_name || "",
-      last_name: last_name || "",
-      dob,
-      gender: gender || "",
-    };
-
-    const extraMetadata = {};
-    for (let key in req.body) {
-      if (
-        ![
-          "first_name",
-          "middle_name",
-          "last_name",
-          "dob",
-          "gender",
-          "role",
-          "email",
-          "phone",
-        ].includes(key)
-      ) {
-        extraMetadata[key] = req.body[key];
-      }
+    if (Object.keys(rest).length > 0) {
+      await updateUserMetadata(user.id, rest);
     }
 
-    await updateUserMetadata(user.id, { ...baseMetadata, ...extraMetadata });
-
-    await updateUserRole(user.id, role.toLowerCase());
     await markUserAsRegistered(user.id);
 
-    return res
-      .status(200)
-      .json({ message: "Registration completed successfully" });
+    return res.status(200).json({ message: "Registration completed successfully" });
   } catch (err) {
     console.error("Registration error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -230,26 +194,24 @@ exports.resendOtp = async (req, res) => {
 };
 exports.createUserWithProfile = async (req, res) => {
   try {
+    const requestingUser = req.user; 
+    if (!requestingUser || requestingUser.role !== "admin") {
+      return res.status(403).json({ error: "Only admin can create users" });
+    }
+
     const {
       email,
       phone: raw_phone,
-      first_name,
-      middle_name,
-      last_name,
-      dob,
-      gender,
       role,
-      profile_pic_url,
-      ...extraMetadata
+      status,
+      ...metadata 
     } = req.body;
 
     if (!email && !raw_phone) {
       return res.status(400).json({ error: "Email or phone is required" });
     }
-    if (!first_name || !dob || !role) {
-      return res
-        .status(400)
-        .json({ error: "first_name, dob, and role are required" });
+    if (!role) {
+      return res.status(400).json({ error: "Role is required" });
     }
 
     const phone = normalizePhone(raw_phone);
@@ -261,21 +223,17 @@ exports.createUserWithProfile = async (req, res) => {
 
     user = await insertUser(email, phone);
 
-    await updateUserRole(user.id, role.toLowerCase());
+    const userUpdateFields = {};
+    if (role) userUpdateFields.role = role.toLowerCase();
+    if (status) userUpdateFields.status = status;
+    if (Object.keys(userUpdateFields).length > 0) {
+      await updateUser(user.id, userUpdateFields);
+    }
+
     await markUserAsRegistered(user.id);
 
-    const metadataEntries = [
-      { key: "first_name", value: first_name },
-      { key: "middle_name", value: middle_name || "" },
-      { key: "last_name", value: last_name || "" },
-      { key: "dob", value: dob },
-      { key: "gender", value: gender || "" },
-      { key: "profile_pic_url", value: profile_pic_url || "" },
-      ...Object.entries(extraMetadata).map(([key, value]) => ({ key, value })),
-    ];
-
-    for (let entry of metadataEntries) {
-      await updateUserMetadata(user.id, entry);
+    if (Object.keys(metadata).length > 0) {
+      await updateUserMetadata(user.id, metadata);
     }
 
     const token = jwt.sign(

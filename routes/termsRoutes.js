@@ -1,11 +1,10 @@
 const express = require('express');
-const termsRouter = express.Router();
+const router = express.Router();
 const termsController = require('../controllers/termsController');
-const authMiddleware = require('../middlewares/authMiddleware');
 
-termsRouter.post('/taxonomy/terms', termsController.getByTaxonomyIds);
-termsRouter.post('/ids', termsController.getByIds);
-termsRouter.post('/', authMiddleware, termsController.create);
-termsRouter.put('/', authMiddleware, termsController.updateByIds);
+router.post('/', termsController.create);       
+router.get('/:id', termsController.getById);      
+router.post('/byTaxonomyIds', termsController.getByTaxonomyIds); 
+router.post('/', termsController.updateByIds);     
 
-module.exports = termsRouter;
+module.exports = router;
