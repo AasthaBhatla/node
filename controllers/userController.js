@@ -13,7 +13,8 @@ const {
   getUsers,
   updateUserLanguage,
   addUserTerms,
-  removeUserTerms
+  removeUserTerms,
+  updateUser
 } = require('../services/userService');
 
 
