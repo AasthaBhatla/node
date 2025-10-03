@@ -194,10 +194,8 @@ exports.resendOtp = async (req, res) => {
 };
 exports.createUserWithProfile = async (req, res) => {
   try {
-    const requestingUser = req.user; 
-    if (!requestingUser || requestingUser.role !== "admin") {
-      return res.status(403).json({ error: "Only admin can create users" });
-    }
+  //  if (req.user.role !== "admin")
+  //    return res.status(403).json({ error: "Only admin can create user profile" });
 
     const {
       email,
