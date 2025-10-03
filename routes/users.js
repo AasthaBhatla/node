@@ -17,5 +17,6 @@ router.post('/profile-picture', authMiddleware, uploadProfile.single('image'), u
 router.post('/documents', authMiddleware, uploadDocument.single('document'), userController.uploadDocument);
 router.delete('/document/:id', authMiddleware, userController.deleteDocument);
 router.get('/documents/:id', authMiddleware, userController.listUserDocuments);
+router.delete("/:id", authMiddleware,userController.deleteUser);
 
 module.exports = router;

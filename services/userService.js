@@ -482,6 +482,19 @@ const removeUserTerms = async (userId, termIds) => {
   }
 };
 
+const deleteUser = async (userId) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM users WHERE id = $1 RETURNING id, email, phone`,
+      [userId]
+    );
+    return result.rows[0]; 
+  } catch (err) {
+    console.error('Error deleting user:', err);
+    throw new Error('Error deleting user');
+  }
+};
+
 module.exports = {
   normalizePhone,
   getUserByEmailOrPhone,
@@ -505,5 +518,6 @@ module.exports = {
   removeDocumentFromMetadata,
   updateUserLanguage,
   addUserTerms,
-  removeUserTerms
+  removeUserTerms,
+  deleteUser
 };

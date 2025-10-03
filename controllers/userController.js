@@ -14,7 +14,8 @@ const {
   updateUserLanguage,
   addUserTerms,
   removeUserTerms,
-  updateUser
+  updateUser,
+  deleteUser
 } = require('../services/userService');
 
 
@@ -294,5 +295,29 @@ exports.listUserDocuments = async (req, res) => {
   } catch (err) {
     console.error('Error listing documents:', err);
     return res.status(500).json({ error: 'Failed to list documents' });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  const requesting_user = req.user;  
+  const target_user_id = req.params.id;
+
+  if (!requesting_user || requesting_user.role !== "admin") {
+    return res.status(403).json({ error: "Only admins can delete users" });
+  }
+
+  try {
+    const user = await getUserById(target_user_id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const deletedUser = await deleteUser(target_user_id);
+
+    res.status(200).json({ 
+      message: "User deleted successfully", 
+      deleted: deletedUser 
+    });
+  } catch (err) {
+    console.error("Delete user error:", err);
+    res.status(500).json({ error: "Failed to delete user" });
   }
 };

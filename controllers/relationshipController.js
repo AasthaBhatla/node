@@ -1,4 +1,11 @@
-const { getItems, createRelationship, updateRelationship, deleteRelationship } = require('../services/relationshipService');
+const { 
+  getItems, 
+  createRelationship, 
+  updateRelationship, 
+  deleteRelationship 
+} = require('../services/relationshipService');
+
+const authMiddleware = require('../middlewares/authMiddleware');
 
 exports.getItems = async (req, res) => {
   try {
@@ -17,51 +24,49 @@ exports.getItems = async (req, res) => {
   }
 };
 
-exports.createRelationship = async (req, res) => {
-  try {
-    const { term_id, taxonomy_id, type, type_id } = req.body;
+exports.createRelationship = [
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const data = Array.isArray(req.body) ? req.body : req.body;
 
-    if (!term_id || !taxonomy_id || !type || !type_id) {
-      return res.status(400).json({ error: 'All fields are required' });
+      const items = Array.isArray(data) ? data : [data];
+      const invalid = items.find(r => !r.term_id || !r.taxonomy_id || !r.type || !r.type_id);
+      if (invalid) return res.status(400).json({ error: 'All fields are required for every relationship' });
+
+      const created = await createRelationship(data);
+      res.status(201).json({ relationships: created });
+    } catch (err) {
+      console.error('Create Relationship Error:', err);
+      res.status(500).json({ error: 'Server error' });
     }
-
-    const relationship = await createRelationship(term_id, taxonomy_id, type, type_id);
-    res.status(201).json({ relationship });
-  } catch (err) {
-    console.error('Create Relationship Error:', err);
-    res.status(500).json({ error: 'Server error' });
   }
-};
+];
 
-exports.updateRelationship = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    const updated = await updateRelationship(id, updates);
-    if (!updated) {
-      return res.status(404).json({ error: 'Relationship not found' });
+exports.updateRelationship = [
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const data = Array.isArray(req.body) ? req.body : req.body;
+      const updated = await updateRelationship(data);
+      res.json({ message: 'Relationship(s) updated successfully', updated });
+    } catch (err) {
+      console.error('Update Relationship Error:', err);
+      res.status(500).json({ error: 'Server error' });
     }
-
-    res.json({ message: 'Relationship updated successfully', updated });
-  } catch (err) {
-    console.error('Update Relationship Error:', err);
-    res.status(500).json({ error: 'Server error' });
   }
-};
+];
 
-exports.deleteRelationship = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const deleted = await deleteRelationship(id);
-    if (!deleted) {
-      return res.status(404).json({ error: 'Relationship not found' });
+exports.deleteRelationship = [
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body) ? req.body : req.body.id || [];
+      const deleted = await deleteRelationship(ids);
+      res.json({ message: 'Relationship(s) deleted successfully', deleted });
+    } catch (err) {
+      console.error('Delete Relationship Error:', err);
+      res.status(500).json({ error: 'Server error' });
     }
-
-    res.json({ message: 'Relationship deleted successfully', deleted });
-  } catch (err) {
-    console.error('Delete Relationship Error:', err);
-    res.status(500).json({ error: 'Server error' });
   }
-};
+];
