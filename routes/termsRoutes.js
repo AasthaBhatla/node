@@ -4,7 +4,7 @@ const termsController = require('../controllers/termsController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 router.post('/', authMiddleware, termsController.create);
-router.post('/update', authMiddleware, termsController.updateByIds);
+router.post('/update', authMiddleware, termsController.update);
 router.get('/:id', termsController.getById);
 router.post('/byTaxonomyIds', termsController.getByTaxonomyIds);
 
