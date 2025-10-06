@@ -1,28 +1,40 @@
 const {
   createReview,
-  getReviews,
+  getAllReviews,
   getReviewById,
-  updateReview,
-  deleteReview,
+  updateReviewById,
+  deleteReviewById
 } = require('../services/reviewsService');
 
+// ✅ Create a new review
 exports.create = async (req, res) => {
   try {
-    const { type, type_id, review, ratings } = req.body;
-    const reviewer_id = req.user.id;
+    const reviewer_id = req.user?.id;
+    const { type, type_id, review, ratings, metadata } = req.body;
 
-    if (!type || !type_id || !review || ratings == null) {
+    if (!reviewer_id || !type || !type_id || !review || ratings == null) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const newReview = await createReview({ reviewer_id, type, type_id, review, ratings });
-    res.status(201).json(newReview);
+    const metaObject = metadata && typeof metadata === 'object' ? metadata : {};
+
+    const newReview = await createReview(
+      reviewer_id,
+      type,
+      type_id,
+      review,
+      ratings,
+      metaObject
+    );
+
+    return res.status(201).json(newReview);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Create Review Error:', err);
+    return res.status(500).json({ error: 'Failed to create review' });
   }
 };
 
+// ✅ Get all reviews (with optional filters)
 exports.getAll = async (req, res) => {
   try {
     const { type, type_id } = req.query;
@@ -30,44 +42,64 @@ exports.getAll = async (req, res) => {
     if (type) filters.type = type;
     if (type_id) filters.type_id = parseInt(type_id);
 
-    const reviews = await getReviews(filters);
-    res.json(reviews);
+    const reviews = await getAllReviews(filters);
+    return res.status(200).json({ reviews });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Get All Reviews Error:', err);
+    return res.status(500).json({ error: 'Failed to fetch reviews' });
   }
 };
 
+// ✅ Get a review by ID
 exports.getById = async (req, res) => {
+  const review_id = req.params.id;
+
   try {
-    const review = await getReviewById(req.params.id);
+    const review = await getReviewById(review_id);
     if (!review) return res.status(404).json({ error: 'Review not found' });
-    res.json(review);
+
+    return res.status(200).json(review);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Get Review By ID Error:', err);
+    return res.status(500).json({ error: 'Failed to fetch review' });
   }
 };
 
+// ✅ Update a review by ID
 exports.update = async (req, res) => {
+  const review_id = req.params.id;
+  const { review, ratings, metadata } = req.body;
+
   try {
-    const { review, ratings } = req.body;
-    const updated = await updateReview(req.params.id, { review, ratings });
-    if (!updated) return res.status(404).json({ error: 'Review not found' });
-    res.json(updated);
+    const metaObject = metadata && typeof metadata === 'object' ? metadata : {};
+
+    const updatedReview = await updateReviewById(
+      review_id,
+      review,
+      ratings,
+      metaObject
+    );
+
+    if (!updatedReview) return res.status(404).json({ error: 'Review not found' });
+
+    return res.status(200).json(updatedReview);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Update Review Error:', err);
+    return res.status(500).json({ error: 'Failed to update review' });
   }
 };
 
-exports.delete = async (req, res) => {
+// ✅ Delete a review by ID
+exports.remove = async (req, res) => {
+  const review_id = req.params.id;
+
   try {
-    const deletedCount = await deleteReview(req.params.id);
-    if (!deletedCount) return res.status(404).json({ error: 'Review not found' });
-    res.json({ message: 'Review deleted successfully' });
+    const deletedReview = await deleteReviewById(review_id);
+    if (!deletedReview) return res.status(404).json({ error: 'Review not found' });
+
+    return res.status(200).json({ message: 'Review deleted successfully' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Delete Review Error:', err);
+    return res.status(500).json({ error: 'Failed to delete review' });
   }
 };

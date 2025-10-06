@@ -12,3 +12,15 @@ CREATE TABLE IF NOT EXISTS reviews (
         REFERENCES users (id)
         ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS review_metadata (
+    id SERIAL PRIMARY KEY,
+    review_id INT NOT NULL,
+    meta_key VARCHAR(100) NOT NULL,
+    meta_value TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_review
+        FOREIGN KEY (review_id)
+        REFERENCES reviews (id)
+        ON DELETE CASCADE
+);
