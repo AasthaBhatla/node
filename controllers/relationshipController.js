@@ -9,12 +9,13 @@ const authMiddleware = require('../middlewares/authMiddleware');
 
 exports.getItems = async (req, res) => {
   try {
-    const { taxonomy_id, type_id, type } = req.query;
+    const { taxonomy_id, type_id, type, term_id } = req.query;
     const filters = {};
 
     if (taxonomy_id) filters.taxonomy_id = parseInt(taxonomy_id);
     if (type_id) filters.type_id = parseInt(type_id);
     if (type) filters.type = type;
+    if (term_id) filters.term_id = parseInt(term_id); 
 
     const items = await getItems(filters);
     res.json({ items });
