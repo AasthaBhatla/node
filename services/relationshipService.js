@@ -10,9 +10,22 @@ const getItems = async (filters = {}) => {
     const params = [];
     let count = 1;
 
-    if (filters.taxonomy_id) { query += ` AND taxonomy_id = $${count++}`; params.push(filters.taxonomy_id); }
-    if (filters.type_id) { query += ` AND type_id = $${count++}`; params.push(filters.type_id); }
-    if (filters.type) { query += ` AND type = $${count++}`; params.push(filters.type); }
+    if (filters.taxonomy_id) {
+      query += ` AND taxonomy_id = $${count++}`;
+      params.push(filters.taxonomy_id);
+    }
+    if (filters.type_id) {
+      query += ` AND type_id = $${count++}`;
+      params.push(filters.type_id);
+    }
+    if (filters.type) {
+      query += ` AND type = $${count++}`;
+      params.push(filters.type);
+    }
+    if (filters.term_id) {
+      query += ` AND term_id = $${count++}`;
+      params.push(filters.term_id);
+    }
 
     query += ` ORDER BY created_at DESC`;
 
@@ -27,21 +40,29 @@ const getItems = async (filters = {}) => {
 const createRelationship = async (data) => {
   try {
     const items = Array.isArray(data) ? data : [data];
-    const created = [];
+    const replaced = [];
 
     for (const { term_id, taxonomy_id, type, type_id } of items) {
-      const result = await pool.query(
-        `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
+      await pool.query(
+        `DELETE FROM taxonomy_relationships 
+         WHERE term_id = $1 AND taxonomy_id = $2 AND type = $3 AND type_id = $4`,
         [term_id, taxonomy_id, type, type_id]
       );
-      created.push(result.rows[0]);
+
+      const result = await pool.query(
+        `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [term_id, taxonomy_id, type, type_id]
+      );
+
+      replaced.push(result.rows[0]);
     }
 
-    return created;
+    return replaced;
   } catch (err) {
     console.error('DB Error creating relationship:', err);
-    throw new Error('Error creating relationship(s)');
+    throw new Error('Error creating/replacing relationship(s)');
   }
 };
 
@@ -97,6 +118,5 @@ module.exports = {
   getItems,
   createRelationship,
   updateRelationship,
-  deleteRelationship
+  deleteRelationship,
 };
-

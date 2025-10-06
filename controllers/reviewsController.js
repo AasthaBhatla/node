@@ -3,20 +3,21 @@ const {
   getAllReviews,
   getReviewById,
   updateReviewById,
-  deleteReviewById
+  deleteReviewById,
 } = require('../services/reviewsService');
 
-// ✅ Create a new review
 exports.create = async (req, res) => {
   try {
     const reviewer_id = req.user?.id;
-    const { type, type_id, review, ratings, metadata } = req.body;
+    const { type, type_id, review, ratings, metadata, status } = req.body;
 
     if (!reviewer_id || !type || !type_id || !review || ratings == null) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     const metaObject = metadata && typeof metadata === 'object' ? metadata : {};
+    const validStatuses = ['pending', 'approved', 'rejected'];
+    const reviewStatus = validStatuses.includes(status) ? status : 'pending';
 
     const newReview = await createReview(
       reviewer_id,
@@ -24,6 +25,7 @@ exports.create = async (req, res) => {
       type_id,
       review,
       ratings,
+      reviewStatus,
       metaObject
     );
 
@@ -34,13 +36,13 @@ exports.create = async (req, res) => {
   }
 };
 
-// ✅ Get all reviews (with optional filters)
 exports.getAll = async (req, res) => {
   try {
-    const { type, type_id } = req.query;
+    const { type, type_id, status } = req.query;
     const filters = {};
     if (type) filters.type = type;
     if (type_id) filters.type_id = parseInt(type_id);
+    if (status) filters.status = status;
 
     const reviews = await getAllReviews(filters);
     return res.status(200).json({ reviews });
@@ -50,10 +52,8 @@ exports.getAll = async (req, res) => {
   }
 };
 
-// ✅ Get a review by ID
 exports.getById = async (req, res) => {
   const review_id = req.params.id;
-
   try {
     const review = await getReviewById(review_id);
     if (!review) return res.status(404).json({ error: 'Review not found' });
@@ -65,18 +65,17 @@ exports.getById = async (req, res) => {
   }
 };
 
-// ✅ Update a review by ID
 exports.update = async (req, res) => {
   const review_id = req.params.id;
-  const { review, ratings, metadata } = req.body;
+  const { review, ratings, metadata, status } = req.body;
 
   try {
     const metaObject = metadata && typeof metadata === 'object' ? metadata : {};
-
     const updatedReview = await updateReviewById(
       review_id,
       review,
       ratings,
+      status,
       metaObject
     );
 
@@ -89,7 +88,6 @@ exports.update = async (req, res) => {
   }
 };
 
-// ✅ Delete a review by ID
 exports.remove = async (req, res) => {
   const review_id = req.params.id;
 
