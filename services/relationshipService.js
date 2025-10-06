@@ -113,10 +113,38 @@ const deleteRelationship = async (ids) => {
     throw new Error('Error deleting relationship(s)');
   }
 };
+const getTypeIdsService = async (filters = {}) => {
+  try {
+    let query = `SELECT DISTINCT type_id FROM taxonomy_relationships WHERE 1=1`;
+    const params = [];
+    let count = 1;
+
+    if (filters.term_id && filters.term_id.length > 0) {
+      const placeholders = filters.term_id.map(() => `$${count++}`).join(', ');
+      query += ` AND term_id IN (${placeholders})`;
+      params.push(...filters.term_id);
+    }
+
+    if (filters.type) {
+      query += ` AND type = $${count++}`;
+      params.push(filters.type);
+    }
+
+    query += ` ORDER BY type_id`;
+
+    const { rows } = await pool.query(query, params);
+
+    return rows.map(row => row.type_id) || [];
+  } catch (err) {
+    console.error('DB Error fetching type IDs:', err);
+    throw new Error('Error fetching type IDs');
+  }
+};
 
 module.exports = {
   getItems,
   createRelationship,
   updateRelationship,
   deleteRelationship,
+  getTypeIdsService
 };

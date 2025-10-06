@@ -2,7 +2,8 @@ const {
   getItems, 
   createRelationship, 
   updateRelationship, 
-  deleteRelationship 
+  deleteRelationship,
+  getTypeIdsService
 } = require('../services/relationshipService');
 
 const authMiddleware = require('../middlewares/authMiddleware');
@@ -71,3 +72,20 @@ exports.deleteRelationship = [
     }
   }
 ];
+exports.getTypeIds = async (req, res) => {
+  try {
+    let { term_id, type } = req.body;
+
+    if (!term_id && !type) {
+      return res.status(400).json({ error: 'Please provide term_id or type for filtering' });
+    }
+    if (term_id && !Array.isArray(term_id)) term_id = [term_id];
+
+    const typeIds = await getTypeIdsService({ term_id, type });
+
+    res.json({ type_ids: typeIds });
+  } catch (err) {
+    console.error('Get Type IDs Error:', err);
+    res.status(500).json({ error: 'Error fetching type IDs' });
+  }
+};
