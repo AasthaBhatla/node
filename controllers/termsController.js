@@ -2,7 +2,8 @@ const {
   createTerms,
   getTermsByIds,
   getTermsByTaxonomyIds,
-  updateTermsByIds
+  updateTermsByIds,
+  getTermsByTaxonomySlug
 } = require('../services/termService');
 
 exports.create = async (req, res) => {
@@ -100,5 +101,19 @@ exports.update = async (req, res) => {
   } catch (err) {
     console.error('Update Terms Error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+};
+exports.getTermsBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    if (!slug) {
+      return res.status(400).json({ error: 'Slug is required' });
+    }
+
+    const terms = await getTermsByTaxonomySlug(slug);
+    res.status(200).json({ success: true, data: terms });
+  } catch (err) {
+    console.error('Get Terms by Taxonomy Slug Error:', err);
+    res.status(500).json({ error: err.message });
   }
 };

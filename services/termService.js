@@ -138,10 +138,39 @@ const updateTermsByIds = async (terms) => {
     client.release();
   }
 };
+async function getTermsByTaxonomySlug(slug) {
+  try {
+    const query = `
+      SELECT 
+          t.id AS term_id,
+          t.slug AS term_slug,
+          t.title AS term_title,
+          t.parent_id,
+          t.created_at,
+          t.updated_at,
+          COALESCE(
+            json_agg(json_build_object('key', tm.key, 'value', tm.value)) 
+            FILTER (WHERE tm.id IS NOT NULL), '[]'
+          ) AS metadata
+      FROM terms t
+      JOIN taxonomy tx ON t.taxonomy_id = tx.id
+      LEFT JOIN term_metadata tm ON tm.term_id = t.id
+      WHERE tx.slug = $1
+      GROUP BY t.id
+      ORDER BY t.id;
+    `;
 
+    const { rows } = await pool.query(query, [slug]);
+    return rows;
+  } catch (error) {
+    console.error('Error fetching terms by taxonomy slug:', error);
+    throw error;
+  }
+}
 module.exports = {
   createTerms,
   getTermsByIds,
   getTermsByTaxonomyIds,
+  getTermsByTaxonomySlug,
   updateTermsByIds
 };
