@@ -3,7 +3,8 @@ const {
   getAllTaxonomies,
   getTaxonomyById,
   updateTaxonomyById,
-  removeTypeFromTaxonomy
+  removeTypeFromTaxonomy,
+  deleteTaxonomyById
 } = require('../services/taxonomyService');
 
 exports.getAll = async (req, res) => {
@@ -119,6 +120,31 @@ exports.deleteType = async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error('Delete Type Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+exports.delete = async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!user.role || user.role.toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admins only.' });
+    }
+
+    const { id } = req.params;
+
+    const deleted = await deleteTaxonomyById(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Taxonomy not found' });
+    }
+
+    res.json({ message: 'Taxonomy deleted successfully', deleted });
+  } catch (err) {
+    console.error('Delete Taxonomy Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
