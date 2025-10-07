@@ -31,11 +31,15 @@ exports.createRelationship = [
   async (req, res) => {
     try {
       const data = Array.isArray(req.body) ? req.body : [req.body];
-      const invalid = data.find(r => !r.term_id || !r.taxonomy_id || !r.type || !r.type_id);
-      if (invalid) {
-        return res.status(400).json({ error: 'All fields are required for every relationship' });
-      }
 
+      const invalid = data.find(
+        r => !r.term_id || !r.taxonomy_id || !r.type || !r.type_id
+      );
+      if (invalid) {
+        return res.status(400).json({
+          error: 'All fields are required for every relationship'
+        });
+      }
       const created = await createRelationship(data);
       res.status(201).json({ relationships: created });
     } catch (err) {

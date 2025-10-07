@@ -42,20 +42,21 @@ const createRelationship = async (data) => {
     const items = Array.isArray(data) ? data : [data];
     const replaced = [];
 
-    for (const { term_id, taxonomy_id, type, type_id } of items) {
-      await pool.query(
-        `DELETE FROM taxonomy_relationships 
-         WHERE term_id = $1 AND taxonomy_id = $2 AND type = $3 AND type_id = $4`,
-        [term_id, taxonomy_id, type, type_id]
-      );
+    const taxonomyIds = [...new Set(items.map(i => i.taxonomy_id))];
 
+    for (const taxonomy_id of taxonomyIds) {
+      await pool.query(
+        `DELETE FROM taxonomy_relationships WHERE taxonomy_id = $1`,
+        [taxonomy_id]
+      );
+    }
+    for (const { term_id, taxonomy_id, type, type_id } of items) {
       const result = await pool.query(
         `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
          VALUES ($1, $2, $3, $4)
          RETURNING *`,
         [term_id, taxonomy_id, type, type_id]
       );
-
       replaced.push(result.rows[0]);
     }
 
@@ -65,6 +66,7 @@ const createRelationship = async (data) => {
     throw new Error('Error creating/replacing relationship(s)');
   }
 };
+
 
 const updateRelationship = async (data) => {
   try {
