@@ -30,7 +30,7 @@ const getItems = async (filters = {}) => {
     query += ` ORDER BY created_at DESC`;
 
     const { rows } = await pool.query(query, params);
-    return rows;
+    return rows.map(({ id, created_at, ...rest }) => rest);
   } catch (err) {
     console.error('DB Error fetching items:', err);
     throw new Error('Error fetching taxonomy items');
@@ -43,21 +43,20 @@ const createRelationship = async (data) => {
     const replaced = [];
 
     const taxonomyIds = [...new Set(items.map(i => i.taxonomy_id))];
-
     for (const taxonomy_id of taxonomyIds) {
-      await pool.query(
-        `DELETE FROM taxonomy_relationships WHERE taxonomy_id = $1`,
-        [taxonomy_id]
-      );
+      await pool.query(`DELETE FROM taxonomy_relationships WHERE taxonomy_id = $1`, [taxonomy_id]);
     }
+
     for (const { term_id, taxonomy_id, type, type_id } of items) {
       const result = await pool.query(
         `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
          VALUES ($1, $2, $3, $4)
-         RETURNING *`,
+         RETURNING id, term_id, taxonomy_id, type, type_id, created_at`,
         [term_id, taxonomy_id, type, type_id]
       );
-      replaced.push(result.rows[0]);
+
+      const { id, created_at, ...clean } = result.rows[0];
+      replaced.push(clean);
     }
 
     return replaced;
@@ -66,7 +65,6 @@ const createRelationship = async (data) => {
     throw new Error('Error creating/replacing relationship(s)');
   }
 };
-
 
 const updateRelationship = async (data) => {
   try {
@@ -83,10 +81,13 @@ const updateRelationship = async (data) => {
     for (const { term_id } of items) {
       const result = await pool.query(
         `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, term_id, taxonomy_id, type, type_id, created_at`,
         [term_id, taxonomy_id, type, type_id]
       );
-      created.push(result.rows[0]);
+
+      const { id, created_at, ...clean } = result.rows[0];
+      created.push(clean);
     }
 
     return created;
@@ -103,10 +104,13 @@ const deleteRelationship = async (ids) => {
 
     for (const id of items) {
       const result = await pool.query(
-        `DELETE FROM taxonomy_relationships WHERE id = $1 RETURNING *`,
+        `DELETE FROM taxonomy_relationships WHERE id = $1 RETURNING id, term_id, taxonomy_id, type, type_id, created_at`,
         [id]
       );
-      if (result.rows[0]) deleted.push(result.rows[0]);
+      if (result.rows[0]) {
+        const { id, created_at, ...clean } = result.rows[0];
+        deleted.push(clean);
+      }
     }
 
     return deleted;
@@ -115,6 +119,7 @@ const deleteRelationship = async (ids) => {
     throw new Error('Error deleting relationship(s)');
   }
 };
+
 const getTypeIdsService = async (filters = {}) => {
   try {
     let query = `SELECT DISTINCT type_id FROM taxonomy_relationships WHERE 1=1`;
@@ -148,5 +153,5 @@ module.exports = {
   createRelationship,
   updateRelationship,
   deleteRelationship,
-  getTypeIdsService
+  getTypeIdsService,
 };

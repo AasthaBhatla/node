@@ -73,7 +73,7 @@ exports.verifyOtp = async (req, res) => {
       { id: user.id },
       process.env.JWT_SECRET || "defaultsecret",
       {
-        expiresIn: "1h",
+        expiresIn: "180d",
       }
     );
 
@@ -237,7 +237,7 @@ exports.createUserWithProfile = async (req, res) => {
     const token = jwt.sign(
       { id: user.id },
       process.env.JWT_SECRET || "defaultsecret",
-      { expiresIn: "1h" }
+      { expiresIn: "180d" }
     );
 
     res.status(201).json({
