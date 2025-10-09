@@ -32,7 +32,14 @@ const getPostBySlug = async (slug) => {
   return result.rows[0] || null;
 };
 
-const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = [], metadataFilters = {}) => {
+const getAllPosts = async (
+  offset = 0,
+  limit = 10,
+  postType = "post",
+  termIds = [],
+  metadataFilters = {},
+  authorId = null
+) => {
   let query = `
     SELECT 
       p.*, 
@@ -53,6 +60,11 @@ const getAllPosts = async (offset = 0, limit = 10, postType = "post", termIds = 
   if (postType) {
     values.push(postType);
     conditions.push(`p.post_type = $${values.length}`);
+  }
+
+  if (authorId) {
+    values.push(authorId);
+    conditions.push(`p.author_id = $${values.length}`);
   }
 
   if (termIds.length) {
