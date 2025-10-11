@@ -7,6 +7,8 @@ const userController = require('../controllers/userController');
 const uploadProfile = getUpload('profile');
 const uploadDocument = getUpload('document');
 
+
+router.post('/by-terms', authMiddleware, userController.getUsersByTerms);
 router.get('/me', authMiddleware, userController.getMe);
 router.post('/me', authMiddleware, userController.updateMe);
 router.post('/', authMiddleware, userController.getUsers);

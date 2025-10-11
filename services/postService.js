@@ -140,6 +140,35 @@ const addTermToPost = async (postId, termId) => {
 const removeTermsFromPost = async (postId) => {
   await pool.query(`DELETE FROM taxonomy_relationships WHERE type_id = $1 AND type = 'post'`, [postId]);
 };
+const getPostsByTermIds = async (termIds = []) => {
+  if (!termIds.length) return [];
+
+  const placeholders = termIds.map((_, i) => `$${i + 1}`).join(", ");
+
+  const query = `
+    SELECT 
+      p.*, 
+      u.email AS author_email,
+      COALESCE(
+        json_agg(json_build_object('key', pm.key, 'value', pm.value)) 
+        FILTER (WHERE pm.id IS NOT NULL), '[]'
+      ) AS metadata,
+      json_agg(
+        json_build_object('term_id', t.id, 'term_slug', t.slug, 'term_title', t.title)
+      ) FILTER (WHERE t.id IS NOT NULL) AS terms
+    FROM posts p
+    JOIN users u ON p.author_id = u.id
+    LEFT JOIN post_metadata pm ON pm.post_id = p.id
+    LEFT JOIN taxonomy_relationships tr ON tr.type_id = p.id AND tr.type = 'post'
+    LEFT JOIN terms t ON t.id = tr.term_id
+    WHERE tr.term_id IN (${placeholders})
+    GROUP BY p.id, u.email
+    ORDER BY p.created_at DESC
+  `;
+
+  const result = await pool.query(query, termIds);
+  return result.rows;
+};
 
 module.exports = {
   createPost,
@@ -152,5 +181,6 @@ module.exports = {
   upsertPostMetadata,
   deletePostMetadataById,
   addTermToPost,
-  removeTermsFromPost
+  removeTermsFromPost,
+  getPostsByTermIds
 };

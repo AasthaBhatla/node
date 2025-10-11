@@ -5,6 +5,7 @@ const authMiddleware = require("../middlewares/authMiddleware");
 
 router.use(authMiddleware);
 
+router.post("/by-terms", postController.getPostsByTerms);
 router.get("/", postController.getPosts);
 router.post("/filter", postController.getPosts);
 router.get("/slug/:slug", postController.getPostBySlug);

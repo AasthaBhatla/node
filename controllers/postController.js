@@ -9,7 +9,8 @@ const {
   deletePostMetadataById,
   addTermToPost,
   removeTermsFromPost,
-  upsertPostMetadata
+  upsertPostMetadata,
+  getPostsByTermIds
 } = require("../services/postService");
 
 const formatMetadata = (metadataArray) => {
@@ -159,6 +160,21 @@ exports.deletePostMetadata = async (req, res) => {
     return res.json({ message: "Post metadata deleted successfully" });
   } catch (err) {
     console.error("Delete Metadata Error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+exports.getPostsByTerms = async (req, res) => {
+  try {
+    const { termIds } = req.body;
+
+    if (!termIds || !Array.isArray(termIds) || !termIds.length) {
+      return res.status(400).json({ error: "termIds must be a non-empty array" });
+    }
+
+    const posts = await getPostsByTermIds(termIds);
+    return res.json({ posts });
+  } catch (error) {
+    console.error("Error fetching posts by terms:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };

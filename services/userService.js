@@ -494,6 +494,46 @@ const deleteUser = async (userId) => {
     throw new Error('Error deleting user');
   }
 };
+const getUsersByTermIds = async (termIds = []) => {
+  if (!Array.isArray(termIds) || termIds.length === 0) return [];
+
+  const query = `
+    SELECT 
+      u.id,
+      u.email,
+      u.phone,
+      u.role,
+      u.status,
+      u.created_at,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object('id', t.id, 'slug', t.slug, 'title', t.title))
+        FILTER (WHERE t.id IS NOT NULL), '[]'
+      ) AS terms,
+      COALESCE(
+        json_object_agg(um.key, um.value)
+        FILTER (WHERE um.key IS NOT NULL), '{}'
+      ) AS metadata
+    FROM users u
+    JOIN taxonomy_relationships tr 
+      ON tr.type_id = u.id AND tr.type = 'user' AND tr.term_id = ANY($1::int[])
+    LEFT JOIN terms t ON t.id = tr.term_id
+    LEFT JOIN user_metadata um ON um.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+  `;
+
+  try {
+    const { rows } = await pool.query(query, [termIds]);
+    return rows.map((u) => ({
+      ...u,
+      terms: JSON.parse(u.terms || '[]'),
+      metadata: typeof u.metadata === 'object' ? u.metadata : JSON.parse(u.metadata || '{}'),
+    }));
+  } catch (err) {
+    console.error('Error in getUsersByTermIds:', err);
+    throw new Error('Error fetching users by term IDs');
+  }
+};
 
 module.exports = {
   normalizePhone,
@@ -519,5 +559,6 @@ module.exports = {
   updateUserLanguage,
   addUserTerms,
   removeUserTerms,
-  deleteUser
+  deleteUser,
+  getUsersByTermIds
 };
