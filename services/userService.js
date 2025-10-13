@@ -145,7 +145,7 @@ const getUsers = async (filters = {}) => {
     status,
     count = 10,
     page = 1,
-    orderBy = 'date',
+    orderBy = 'created_at',
     order = 'ASC',
     email,
     phone,
@@ -207,32 +207,66 @@ const getUsers = async (filters = {}) => {
     LIMIT $${i++} OFFSET $${i++};
   `;
 
-  try {
-    const result = await pool.query(query, values);
-    const users = result.rows;
+  const result = await pool.query(query, values);
+  const users = result.rows;
+  if (!users.length) return [];
 
-    if (users.length === 0) return users;
+  const userIds = users.map(u => u.id);
 
-    const userIds = users.map((u) => u.id);
-    const metaResult = await pool.query(
-      `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
-      [userIds]
-    );
+  const metaResult = await pool.query(
+    `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
+    [userIds]
+  );
 
-    const metadataMap = {};
-    metaResult.rows.forEach(({ user_id, key, value }) => {
-      if (!metadataMap[user_id]) metadataMap[user_id] = {};
-      metadataMap[user_id][key] = value;
+  const metadataMap = {};
+  metaResult.rows.forEach(({ user_id, key, value }) => {
+    if (!metadataMap[user_id]) metadataMap[user_id] = {};
+    metadataMap[user_id][key] = value;
+  });
+
+  const taxoResult = await pool.query(`
+    SELECT tr.type_id AS user_id, 
+           tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+           t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+    FROM taxonomy_relationships tr
+    JOIN terms t ON tr.term_id = t.id
+    JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+    WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
+    ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
+  `, [userIds]);
+
+  const taxoMap = {};
+  for (const row of taxoResult.rows) {
+    if (!taxoMap[row.user_id]) taxoMap[row.user_id] = {};
+    const userTax = taxoMap[row.user_id];
+
+    if (!userTax[row.taxonomy_id]) {
+      userTax[row.taxonomy_id] = {
+        id: row.taxonomy_id,
+        slug: row.taxonomy_slug,
+        title: row.taxonomy_title,
+        terms: [],
+      };
+    }
+
+    userTax[row.taxonomy_id].terms.push({
+      id: row.term_id,
+      slug: row.term_slug,
+      title: row.term_title,
+      parent_id: row.parent_id,
     });
-
-    return users.map((user) => ({
-      ...user,
-      metadata: metadataMap[user.id] || {},
-    }));
-  } catch (err) {
-    console.error(err);
-    throw new Error('Error fetching users');
   }
+
+  return users.map((user) => ({
+    ...user,
+    metadata: metadataMap[user.id] || {},
+    taxonomies: taxoMap[user.id]
+      ? Object.values(taxoMap[user.id]).map(tx => ({
+          ...tx,
+          terms: buildHierarchy(tx.terms),
+        }))
+      : [],
+  }));
 };
 
 const saveDeviceToken = async (userId, deviceToken) => {
@@ -534,6 +568,60 @@ const getUsersByTermIds = async (termIds = []) => {
     throw new Error('Error fetching users by term IDs');
   }
 };
+const buildHierarchy = (terms) => {
+  const map = {};
+  const roots = [];
+
+  terms.forEach(t => (map[t.id] = { ...t, children: [] }));
+
+  terms.forEach(t => {
+    if (t.parent_id && map[t.parent_id]) {
+      map[t.parent_id].children.push(map[t.id]);
+    } else {
+      roots.push(map[t.id]);
+    }
+  });
+
+  return roots;
+};
+
+const getUserTaxonomies = async (userId) => {
+  const { rows } = await pool.query(`
+    SELECT 
+      tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+      t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+    FROM taxonomy_relationships tr
+    JOIN terms t ON tr.term_id = t.id
+    JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+    WHERE tr.type = 'user' AND tr.type_id = $1
+    ORDER BY tx.id, t.parent_id NULLS FIRST, t.id;
+  `, [userId]);
+
+  if (!rows.length) return [];
+
+  const taxonomies = {};
+  for (const row of rows) {
+    if (!taxonomies[row.taxonomy_id]) {
+      taxonomies[row.taxonomy_id] = {
+        id: row.taxonomy_id,
+        slug: row.taxonomy_slug,
+        title: row.taxonomy_title,
+        terms: [],
+      };
+    }
+    taxonomies[row.taxonomy_id].terms.push({
+      id: row.term_id,
+      slug: row.term_slug,
+      title: row.term_title,
+      parent_id: row.parent_id,
+    });
+  }
+
+  return Object.values(taxonomies).map(tx => ({
+    ...tx,
+    terms: buildHierarchy(tx.terms),
+  }));
+};
 
 module.exports = {
   normalizePhone,
@@ -560,5 +648,7 @@ module.exports = {
   addUserTerms,
   removeUserTerms,
   deleteUser,
-  getUsersByTermIds
+  getUsersByTermIds,
+  buildHierarchy,
+  getUserTaxonomies
 };

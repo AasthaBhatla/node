@@ -16,7 +16,9 @@ const {
   removeUserTerms,
   updateUser,
   deleteUser,
-  getUsersByTermIds
+  getUsersByTermIds,
+  buildHierarchy,
+  getUserTaxonomies
 } = require('../services/userService');
 
 
