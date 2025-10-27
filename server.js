@@ -22,6 +22,7 @@ const optionsRoutes = require("./routes/optionsRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const reviewsRoutes = require("./routes/reviewsRoutes");
 const relationshipRoutes = require("./routes/relationshipRoutes");
+const s3Routes = require("./routes/s3Routes");
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
@@ -39,6 +40,7 @@ app.use("/options", optionsRoutes);
 app.use("/orders", orderRoutes);
 app.use("/reviews", reviewsRoutes);
 app.use("/relationships", relationshipRoutes);
+app.use("/uploadnow", s3Routes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
