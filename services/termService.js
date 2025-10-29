@@ -167,10 +167,39 @@ async function getTermsByTaxonomySlug(slug) {
     throw error;
   }
 }
+const searchTerms = async (keyword) => {
+  try {
+    const query = `
+      SELECT 
+        t.id,
+        t.slug,
+        t.title,
+        t.parent_id,
+        t.taxonomy_id,
+        COALESCE(
+          json_agg(json_build_object('key', tm.key, 'value', tm.value))
+          FILTER (WHERE tm.id IS NOT NULL), '[]'
+        ) AS metadata
+      FROM terms t
+      LEFT JOIN term_metadata tm ON t.id = tm.term_id
+      WHERE t.title ILIKE $1 OR t.slug ILIKE $1
+      GROUP BY t.id
+      ORDER BY t.title;
+    `;
+    const values = [`%${keyword}%`]; 
+    const { rows } = await pool.query(query, values);
+    return rows;
+  } catch (error) {
+    console.error('Error in searchTerms:', error);
+    throw new Error('Error searching terms');
+  }
+};
+
 module.exports = {
   createTerms,
   getTermsByIds,
   getTermsByTaxonomyIds,
   getTermsByTaxonomySlug,
-  updateTermsByIds
+  updateTermsByIds,
+  searchTerms
 };

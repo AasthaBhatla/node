@@ -3,7 +3,8 @@ const {
   getTermsByIds,
   getTermsByTaxonomyIds,
   updateTermsByIds,
-  getTermsByTaxonomySlug
+  getTermsByTaxonomySlug,
+  searchTerms
 } = require('../services/termService');
 
 exports.create = async (req, res) => {
@@ -115,5 +116,20 @@ exports.getTermsBySlug = async (req, res) => {
   } catch (err) {
     console.error('Get Terms by Taxonomy Slug Error:', err);
     res.status(500).json({ error: err.message });
+  }
+};
+exports.search = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+
+    if (!keyword || keyword.trim() === '') {
+      return res.status(400).json({ error: 'Keyword is required for search' });
+    }
+
+    const results = await searchTerms(keyword);
+    res.status(200).json({ success: true, data: results });
+  } catch (err) {
+    console.error('Search Terms Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
