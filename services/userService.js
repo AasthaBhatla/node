@@ -622,6 +622,161 @@ const getUserTaxonomies = async (userId) => {
     terms: buildHierarchy(tx.terms),
   }));
 };
+const searchUsers = async (keyword, page = 1, limit = 10) => {
+  if (!keyword || typeof keyword !== 'string') return { users: [], page: 1, limit: 10, total: 0 };
+
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.max(1, parseInt(limit, 10) || 10);
+  const offset = (safePage - 1) * safeLimit;
+  const ilike = `%${keyword}%`;
+
+  const whereClause = `
+    (
+      u.email ILIKE $1
+      OR u.phone ILIKE $1
+      OR u.role::text ILIKE $1
+      OR u.status::text ILIKE $1
+      OR EXISTS (
+        SELECT 1 FROM user_metadata um2
+        WHERE um2.user_id = u.id AND um2.value ILIKE $1
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM taxonomy_relationships tr2
+        JOIN terms t2 ON t2.id = tr2.term_id
+        WHERE tr2.type = 'user' AND tr2.type_id = u.id
+          AND (t2.title ILIKE $1 OR t2.slug ILIKE $1)
+      )
+    )
+  `;
+
+  const countQuery = `SELECT COUNT(DISTINCT u.id) AS total FROM users u WHERE ${whereClause};`;
+
+  const userQuery = `
+    SELECT DISTINCT u.id, u.email, u.phone, u.role, u.status, u.created_at
+    FROM users u
+    WHERE ${whereClause}
+    ORDER BY u.created_at DESC
+    LIMIT $2 OFFSET $3;
+  `;
+
+  try {
+    const countRes = await pool.query(countQuery, [ilike]);
+    const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    const userRes = await pool.query(userQuery, [ilike, safeLimit, offset]);
+    const users = userRes.rows;
+    if (!users || users.length === 0) {
+      return { users: [], page: safePage, limit: safeLimit, total };
+    }
+
+    const userIds = users.map(u => u.id);
+
+    const metaRes = await pool.query(
+      `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
+      [userIds]
+    );
+    const metadataMap = {};
+    metaRes.rows.forEach(({ user_id, key, value }) => {
+      if (!metadataMap[user_id]) metadataMap[user_id] = {};
+      metadataMap[user_id][key] = value;
+    });
+
+    const taxoRes = await pool.query(`
+      SELECT tr.type_id AS user_id,
+             tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+             t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+      FROM taxonomy_relationships tr
+      JOIN terms t ON tr.term_id = t.id
+      JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+      WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
+      ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
+    `, [userIds]);
+
+    const taxoMap = {};
+    for (const row of taxoRes.rows) {
+      if (!taxoMap[row.user_id]) taxoMap[row.user_id] = {};
+      const userTax = taxoMap[row.user_id];
+      if (!userTax[row.taxonomy_id]) {
+        userTax[row.taxonomy_id] = {
+          id: row.taxonomy_id,
+          slug: row.taxonomy_slug,
+          title: row.taxonomy_title,
+          terms: [],
+        };
+      }
+      userTax[row.taxonomy_id].terms.push({
+        id: row.term_id,
+        slug: row.term_slug,
+        title: row.term_title,
+        parent_id: row.parent_id,
+      });
+    }
+    const buildHierarchyLocal = (terms) => {
+      const map = {};
+      const roots = [];
+      terms.forEach(t => (map[t.id] = { ...t, children: [] }));
+      terms.forEach(t => {
+        if (t.parent_id && map[t.parent_id]) {
+          map[t.parent_id].children.push(map[t.id]);
+        } else {
+          roots.push(map[t.id]);
+        }
+      });
+      return roots;
+    };
+
+    const finalUsers = users.map((user) => ({
+      ...user,
+      metadata: metadataMap[user.id] || {},
+      taxonomies: taxoMap[user.id]
+        ? Object.values(taxoMap[user.id]).map(tx => ({
+            ...tx,
+            terms: buildHierarchyLocal(tx.terms),
+          }))
+        : [],
+    }));
+
+    return { users: finalUsers, page: safePage, limit: safeLimit, total };
+  } catch (err) {
+    console.error('Error in searchUsers (final):', err);
+    throw new Error('Error searching users');
+  }
+};
+const getUsersByIds = async (ids) => {
+  try {
+    const usersRes = await pool.query(
+      `SELECT id, email, phone, role, status, created_at 
+       FROM users 
+       WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+
+    const users = usersRes.rows;
+    if (users.length === 0) return [];
+
+    const metaRes = await pool.query(
+      `SELECT user_id, key, value 
+       FROM user_metadata 
+       WHERE user_id = ANY($1::int[])`,
+      [ids]
+    );
+
+    const metadata = {};
+    metaRes.rows.forEach(meta => {
+      if (!metadata[meta.user_id]) metadata[meta.user_id] = {};
+      metadata[meta.user_id][meta.key] = meta.value;
+    });
+
+    return users.map(user => ({
+      ...user,
+      metadata: metadata[user.id] || {}
+    }));
+  } catch (error) {
+    console.error("Error in getUsersByIds:", error);
+    throw new Error("Error fetching multiple users by ID");
+  }
+};
 
 module.exports = {
   normalizePhone,
@@ -650,5 +805,7 @@ module.exports = {
   deleteUser,
   getUsersByTermIds,
   buildHierarchy,
-  getUserTaxonomies
+  getUserTaxonomies,
+  searchUsers,
+  getUsersByIds   
 };

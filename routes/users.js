@@ -7,9 +7,10 @@ const userController = require('../controllers/userController');
 const uploadProfile = getUpload('profile');
 const uploadDocument = getUpload('document');
 
-
+router.post('/by-ids', authMiddleware, userController.getUsersByIds); 
 router.post('/by-terms', authMiddleware, userController.getUsersByTerms);
 router.get('/me', authMiddleware, userController.getMe);
+router.get('/search',authMiddleware, userController.searchUsers);
 router.post('/me', authMiddleware, userController.updateMe);
 router.post('/', authMiddleware, userController.getUsers);
 router.get('/:id', authMiddleware, userController.getUserById);
@@ -21,4 +22,6 @@ router.delete('/document/:id', authMiddleware, userController.deleteDocument);
 router.get('/documents/:id', authMiddleware, userController.listUserDocuments);
 router.delete("/:id", authMiddleware,userController.deleteUser);
 
+
 module.exports = router;
+

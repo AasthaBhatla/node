@@ -18,7 +18,9 @@ const {
   deleteUser,
   getUsersByTermIds,
   buildHierarchy,
-  getUserTaxonomies
+  getUserTaxonomies,
+  searchUsers,
+  getUsersByIds   
 } = require('../services/userService');
 
 
@@ -339,5 +341,37 @@ exports.getUsersByTerms = async (req, res) => {
   } catch (error) {
     console.error('Error fetching users by terms:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+exports.searchUsers = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    if (!keyword || keyword.trim() === '') {
+      return res.status(400).json({ error: 'keyword is required' });
+    }
+
+    const users = await searchUsers(keyword.trim(), page, limit);
+    return res.status(200).json({ users, page, limit });
+  } catch (err) {
+    console.error('Error in searchUsers controller:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+exports.getUsersByIds = async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "User ids are required as an array" });
+    }
+
+    const users = await getUsersByIds(ids); 
+    return res.status(200).json({ users });
+  } catch (error) {
+    console.error("Error in getUsersByIds:", error);
+    return res.status(500).json({ message: "Failed to fetch users by ids" });
   }
 };
