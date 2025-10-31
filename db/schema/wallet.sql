@@ -1,0 +1,5 @@
+CREATE TABLE wallet (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  balance NUMERIC(10, 2) DEFAULT 0 CHECK (balance >= 0)
+);
