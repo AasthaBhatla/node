@@ -1,4 +1,3 @@
-// routes/s3Routes.js
 const express = require("express");
 const crypto = require("crypto");
 const {
@@ -18,17 +17,28 @@ if (!REGION || !BUCKET) {
   throw new Error("AWS_DEFAULT_REGION and S3_BUCKET must be set");
 }
 
-const s3 = new S3Client({
-  region: REGION,
-  // Credentials will be picked up from env automatically
-});
+const s3 = new S3Client({ region: REGION });
 
 /** Map allowed mime types to file extension */
 const EXT_MAP = {
+  // Images
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",
+
+  // Documents
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "docx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    "pptx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "text/plain": "txt",
+  "application/zip": "zip",
 };
 
 const ALLOWED_MIME = Object.keys(EXT_MAP);
@@ -41,13 +51,11 @@ function folderByDate() {
   return `${yyyy}/${mm}/`;
 }
 
-/** Public URL builder (works if object is public or behind a public CDN) */
+/** Public URL builder (works if object is public or behind a CDN) */
 function publicUrlForKey(key) {
   if (PUBLIC_CDN_DOMAIN) {
-    // Use your CDN domain if provided
     return `https://${PUBLIC_CDN_DOMAIN}/${key.replace(/^\/+/, "")}`;
   }
-  // S3 virtual-hosted–style URL
   return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key.replace(
     /^\/+/,
     ""
@@ -55,7 +63,7 @@ function publicUrlForKey(key) {
 }
 
 /**
- * POST /s3/presign
+ * POST /uploadnow/presign
  * Body: { content_type: "image/png", folder?: "mobile/" }
  * Returns: { put_url, key, public_url }
  */
@@ -71,29 +79,23 @@ router.post("/presign", async (req, res) => {
       });
     }
 
-    const ext = EXT_MAP[mime] || "jpg";
+    const ext = EXT_MAP[mime] || "bin";
     const rand = crypto.randomBytes(8).toString("hex");
 
-    // Keep your existing pattern: mobile/YYYY/MM/random.ext
     const baseFolder =
       typeof folder === "string" && folder.trim()
         ? folder.trim().replace(/^\/+/, "")
-        : "mobile/";
+        : "uploads/";
     const key = `${baseFolder}${folderByDate()}${rand}.${ext}`;
 
-    // IMPORTANT: lock ContentType so the client must send it exactly (prevents content-type spoofing)
     const putCmd = new PutObjectCommand({
       Bucket: BUCKET,
       Key: key,
       ContentType: mime,
-      // If you need the object publicly readable without CloudFront, uncomment the ACL:
-      // ACL: "public-read",
-      // You can also add CacheControl / Metadata here if you need:
-      // CacheControl: "public, max-age=31536000, immutable",
-      // Metadata: { uploadedBy: "api" },
+      // ACL: "public-read", // enable if needed
     });
 
-    const put_url = await getSignedUrl(s3, putCmd, { expiresIn: 600 }); // 10 minutes
+    const put_url = await getSignedUrl(s3, putCmd, { expiresIn: 600 }); // 10 min
 
     return res.json({
       put_url,
@@ -109,8 +111,8 @@ router.post("/presign", async (req, res) => {
 });
 
 /**
- * GET /s3/get-url?key=path/to/object
- * For private buckets: returns a short-lived GET URL to read the file.
+ * GET /uploadnow/get-url?key=path/to/object
+ * Returns a short-lived GET URL for private files
  */
 router.get("/get-url", async (req, res) => {
   try {
@@ -118,7 +120,7 @@ router.get("/get-url", async (req, res) => {
     if (!key) return res.status(400).json({ error: "missing_key" });
 
     const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
-    const url = await getSignedUrl(s3, getCmd, { expiresIn: 300 }); // 5 minutes
+    const url = await getSignedUrl(s3, getCmd, { expiresIn: 300 }); // 5 min
     return res.json({ url });
   } catch (e) {
     console.error(e);
