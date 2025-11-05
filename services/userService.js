@@ -560,14 +560,15 @@ const getUsersByTermIds = async (termIds = []) => {
     const { rows } = await pool.query(query, [termIds]);
     return rows.map((u) => ({
       ...u,
-      terms: JSON.parse(u.terms || '[]'),
-      metadata: typeof u.metadata === 'object' ? u.metadata : JSON.parse(u.metadata || '{}'),
+      terms: u.terms || [],
+      metadata: u.metadata || {},
     }));
   } catch (err) {
     console.error('Error in getUsersByTermIds:', err);
     throw new Error('Error fetching users by term IDs');
   }
 };
+
 const buildHierarchy = (terms) => {
   const map = {};
   const roots = [];
