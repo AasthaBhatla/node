@@ -90,11 +90,11 @@ exports.updatePost = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
   try {
-    const { offset, limit, post_type, term_ids, metadata, author_id } = req.body;
+    const { offset = 0, limit = 10, post_type, term_ids, metadata, author_id } = req.body;
 
     const posts = await getAllPosts(
-      parseInt(offset, 10) || 0,
-      parseInt(limit, 10) || 10,
+      Number(offset) * Number(limit), 
+      Number(limit),
       post_type || "post",
       Array.isArray(term_ids) ? term_ids.map(Number).filter(Boolean) : [],
       typeof metadata === "object" && metadata !== null ? metadata : {},

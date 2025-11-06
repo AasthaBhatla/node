@@ -86,13 +86,15 @@ const getAllPosts = async (
     });
     query += ` HAVING ${havingConditions.join(" AND ")}`;
   }
-
+  
   values.push(limit, offset);
-  query += ` ORDER BY p.created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`;
+
+  query += ` ORDER BY p.created_at DESC, p.id DESC LIMIT $${values.length - 1} OFFSET $${values.length}`;
 
   const result = await pool.query(query, values);
   return result.rows;
 };
+
 
 const updatePostById = async (id, postType, title, slug) => {
   const result = await pool.query(
