@@ -3,31 +3,44 @@ const pool = require('../db');
 const getItems = async (filters = {}) => {
   try {
     let query = `
-      SELECT id, taxonomy_id, term_id, type, type_id, created_at 
-      FROM taxonomy_relationships 
+      SELECT 
+        tr.id,
+        tr.taxonomy_id,
+        tr.term_id,
+        tr.type,
+        tr.type_id,
+        tr.created_at,
+        tx.slug AS taxonomy_slug,
+        tx.title AS taxonomy_title,
+        te.slug AS term_slug,
+        te.title AS term_title
+      FROM taxonomy_relationships tr
+      LEFT JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+      LEFT JOIN terms te ON tr.term_id = te.id
       WHERE 1=1
     `;
+
     const params = [];
     let count = 1;
 
     if (filters.taxonomy_id) {
-      query += ` AND taxonomy_id = $${count++}`;
+      query += ` AND tr.taxonomy_id = $${count++}`;
       params.push(filters.taxonomy_id);
     }
     if (filters.type_id) {
-      query += ` AND type_id = $${count++}`;
+      query += ` AND tr.type_id = $${count++}`;
       params.push(filters.type_id);
     }
     if (filters.type) {
-      query += ` AND type = $${count++}`;
+      query += ` AND tr.type = $${count++}`;
       params.push(filters.type);
     }
     if (filters.term_id) {
-      query += ` AND term_id = $${count++}`;
+      query += ` AND tr.term_id = $${count++}`;
       params.push(filters.term_id);
     }
 
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY tr.created_at DESC`;
 
     const { rows } = await pool.query(query, params);
     return rows.map(({ id, created_at, ...rest }) => rest);
@@ -36,6 +49,7 @@ const getItems = async (filters = {}) => {
     throw new Error('Error fetching taxonomy items');
   }
 };
+
 
 const createRelationship = async (data) => {
   try {
