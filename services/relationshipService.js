@@ -1,4 +1,4 @@
-const pool = require('../db');
+const pool = require("../db");
 
 const getItems = async (filters = {}) => {
   try {
@@ -45,23 +45,51 @@ const getItems = async (filters = {}) => {
     const { rows } = await pool.query(query, params);
     return rows.map(({ id, created_at, ...rest }) => rest);
   } catch (err) {
-    console.error('DB Error fetching items:', err);
-    throw new Error('Error fetching taxonomy items');
+    console.error("DB Error fetching items:", err);
+    throw new Error("Error fetching taxonomy items");
   }
 };
 
-
 const createRelationship = async (data) => {
+  // try {
+  //   const items = Array.isArray(data) ? data : [data];
+  //   const replaced = [];
+
+  //   const taxonomyIds = [...new Set(items.map(i => i.taxonomy_id))];
+  //   for (const taxonomy_id of taxonomyIds) {
+  //     await pool.query(`DELETE FROM taxonomy_relationships WHERE taxonomy_id = $1`, [taxonomy_id]);
+  //   }
+
+  //   for (const { term_id, taxonomy_id, type, type_id } of items) {
+  //     const result = await pool.query(
+  //       `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
+  //        VALUES ($1, $2, $3, $4)
+  //        RETURNING id, term_id, taxonomy_id, type, type_id, created_at`,
+  //       [term_id, taxonomy_id, type, type_id]
+  //     );
+
+  //     const { id, created_at, ...clean } = result.rows[0];
+  //     replaced.push(clean);
+  //   }
+
+  //   return replaced;
+  // } catch (err) {
+  //   console.error('DB Error creating relationship:', err);
+  //   throw new Error('Error creating/replacing relationship(s)');
+  // }
+
   try {
     const items = Array.isArray(data) ? data : [data];
-    const replaced = [];
+    const { taxonomy_id, type, type_id } = items[0];
 
-    const taxonomyIds = [...new Set(items.map(i => i.taxonomy_id))];
-    for (const taxonomy_id of taxonomyIds) {
-      await pool.query(`DELETE FROM taxonomy_relationships WHERE taxonomy_id = $1`, [taxonomy_id]);
-    }
+    await pool.query(
+      `DELETE FROM taxonomy_relationships 
+       WHERE taxonomy_id = $1 AND type = $2 AND type_id = $3`,
+      [taxonomy_id, type, type_id]
+    );
 
-    for (const { term_id, taxonomy_id, type, type_id } of items) {
+    const created = [];
+    for (const { term_id } of items) {
       const result = await pool.query(
         `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
          VALUES ($1, $2, $3, $4)
@@ -70,13 +98,13 @@ const createRelationship = async (data) => {
       );
 
       const { id, created_at, ...clean } = result.rows[0];
-      replaced.push(clean);
+      created.push(clean);
     }
 
-    return replaced;
+    return created;
   } catch (err) {
-    console.error('DB Error creating relationship:', err);
-    throw new Error('Error creating/replacing relationship(s)');
+    console.error("DB Error updating relationship:", err);
+    throw new Error("Error replacing relationships");
   }
 };
 
@@ -106,8 +134,8 @@ const updateRelationship = async (data) => {
 
     return created;
   } catch (err) {
-    console.error('DB Error updating relationship:', err);
-    throw new Error('Error replacing relationships');
+    console.error("DB Error updating relationship:", err);
+    throw new Error("Error replacing relationships");
   }
 };
 
@@ -129,8 +157,8 @@ const deleteRelationship = async (ids) => {
 
     return deleted;
   } catch (err) {
-    console.error('DB Error deleting relationship:', err);
-    throw new Error('Error deleting relationship(s)');
+    console.error("DB Error deleting relationship:", err);
+    throw new Error("Error deleting relationship(s)");
   }
 };
 
@@ -141,7 +169,7 @@ const getTypeIdsService = async (filters = {}) => {
     let count = 1;
 
     if (filters.term_id && filters.term_id.length > 0) {
-      const placeholders = filters.term_id.map(() => `$${count++}`).join(', ');
+      const placeholders = filters.term_id.map(() => `$${count++}`).join(", ");
       query += ` AND term_id IN (${placeholders})`;
       params.push(...filters.term_id);
     }
@@ -155,10 +183,10 @@ const getTypeIdsService = async (filters = {}) => {
 
     const { rows } = await pool.query(query, params);
 
-    return rows.map(row => row.type_id) || [];
+    return rows.map((row) => row.type_id) || [];
   } catch (err) {
-    console.error('DB Error fetching type IDs:', err);
-    throw new Error('Error fetching type IDs');
+    console.error("DB Error fetching type IDs:", err);
+    throw new Error("Error fetching type IDs");
   }
 };
 
