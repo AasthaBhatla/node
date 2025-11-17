@@ -24,6 +24,7 @@ const reviewsRoutes = require("./routes/reviewsRoutes");
 const relationshipRoutes = require("./routes/relationshipRoutes");
 const s3Routes = require("./routes/s3Routes");
 const walletRoutes = require("./routes/walletRoutes");
+const workspaceRoutes = require("./routes/workspaceRoutes");
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
@@ -43,6 +44,7 @@ app.use("/reviews", reviewsRoutes);
 app.use("/relationships", relationshipRoutes);
 app.use("/uploadnow", s3Routes);
 app.use("/wallet", walletRoutes);
+app.use("/workspace", workspaceRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
