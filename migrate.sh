@@ -13,5 +13,7 @@ docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/users.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/taxonomy.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/posts.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/reviews.sql
+docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/wallet.sql
+docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/workspace.sql
 
 echo "DB Migrations complete"
