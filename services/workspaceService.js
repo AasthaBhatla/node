@@ -98,31 +98,42 @@ const getWorkspacesWithMetadata = async (userId) => {
 };
 
 
-const upsertWorkspaceMetadata = async (workspaceId, key, value) => {
+const upsertWorkspaceMetadata = async (workspaceId, items = []) => {
   try {
-    const updateResult = await pool.query(
-      `UPDATE workspace_metadata
-       SET meta_value = $3
-       WHERE workspace_id = $1 AND meta_key = $2
-       RETURNING *`,
-      [workspaceId, key, value]
-    );
+    if (!Array.isArray(items) || items.length === 0) return [];
 
-    if (updateResult.rows.length > 0) {
-      return updateResult.rows[0];
+    const map = new Map();
+    for (const item of items) {
+      if (item && item.key) {
+        map.set(item.key, item.value ?? null);
+      }
     }
 
-    const insertResult = await pool.query(
-      `INSERT INTO workspace_metadata (workspace_id, meta_key, meta_value)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [workspaceId, key, value]
-    );
+    if (map.size === 0) return [];
 
-    return insertResult.rows[0];
+    const values = [];
+    let paramIndex = 2; 
+    const rowsPlaceholders = [];
+
+    for (const [key, value] of map.entries()) {
+      rowsPlaceholders.push(`($1, $${paramIndex}, $${paramIndex + 1})`);
+      values.push(key, value);
+      paramIndex += 2;
+    }
+
+    const query = `
+      INSERT INTO workspace_metadata (workspace_id, meta_key, meta_value)
+      VALUES ${rowsPlaceholders.join(', ')}
+      ON CONFLICT (workspace_id, meta_key)
+      DO UPDATE SET meta_value = EXCLUDED.meta_value
+      RETURNING *;
+    `;
+
+    const { rows } = await pool.query(query, [workspaceId, ...values]);
+    return rows;
   } catch (err) {
-    console.error("Error in upsertWorkspaceMetadata:", err);
-    throw new Error("Error updating metadata");
+    console.error('Error in upsertWorkspaceMetadataBulk:', err);
+    throw new Error('Error updating metadata');
   }
 };
 

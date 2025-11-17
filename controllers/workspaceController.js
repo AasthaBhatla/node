@@ -128,18 +128,36 @@ exports.updateMetadata = async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Only User & Admin allowed.' });
     }
 
-    const workspaceId = parseInt(req.params.id);
-    const { key, value } = req.body;
+    const workspaceId = parseInt(req.params.id, 10);
+    const body = req.body;
 
-    if (!workspaceId || !key) {
-      return res.status(400).json({ error: 'workspaceId and key are required' });
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required' });
     }
 
-    const updated = await upsertWorkspaceMetadata(workspaceId, key, value);
+    let items = [];
+
+    // If body is an array -> bulk
+    if (Array.isArray(body)) {
+      if (body.length === 0) {
+        return res.status(400).json({ error: 'Metadata array cannot be empty' });
+      }
+      items = body;
+    } else {
+      // Single object -> wrap in array
+      const { key, value } = body || {};
+      if (!key) {
+        return res.status(400).json({ error: 'workspaceId and key are required' });
+      }
+      items = [{ key, value }];
+    }
+
+    const rows = await upsertWorkspaceMetadata(workspaceId, items);
 
     return res.status(200).json({
       message: 'Metadata saved successfully',
-      data: updated,
+      count: rows.length,
+      data: rows,
     });
 
   } catch (err) {

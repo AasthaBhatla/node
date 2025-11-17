@@ -12,7 +12,7 @@ router.post('/by-terms', authMiddleware, userController.getUsersByTerms);
 router.get('/me', authMiddleware, userController.getMe);
 router.get('/search',authMiddleware, userController.searchUsers);
 router.post('/me', authMiddleware, userController.updateMe);
-router.post('/', authMiddleware, userController.getUsers);
+router.post('/', userController.getUsers);
 router.get('/:id', authMiddleware, userController.getUserById);
 router.post('/:id', authMiddleware, userController.updateUserMetaByAdmin);
 

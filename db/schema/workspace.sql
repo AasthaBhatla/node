@@ -11,3 +11,6 @@ CREATE TABLE workspace_metadata (
     meta_key TEXT,
     meta_value TEXT
 );
+ALTER TABLE workspace_metadata
+  ADD CONSTRAINT workspace_metadata_unique_key
+  UNIQUE (workspace_id, meta_key);
