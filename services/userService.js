@@ -129,12 +129,42 @@ const updateUserRole = async (userId, role) => {
 
 const getUserById = async (userId) => {
   try {
-    const result = await pool.query(
-      `SELECT id, email, phone, status, role FROM users WHERE id = $1`,
+    // 1. Basic user info
+    const userRes = await pool.query(
+      `SELECT id, email, phone, status, role, created_at 
+       FROM users 
+       WHERE id = $1`,
       [userId]
     );
-    return result.rows[0];
+
+    if (userRes.rows.length === 0) return null;
+
+    const user = userRes.rows[0];
+
+    // 2. Metadata (same shape as in getUsers)
+    const metaRes = await pool.query(
+      `SELECT key, value 
+       FROM user_metadata 
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    const metadata = {};
+    metaRes.rows.forEach(({ key, value }) => {
+      metadata[key] = value;
+    });
+
+    // 3. Taxonomies + terms (reuse existing helper)
+    const taxonomies = await getUserTaxonomies(userId);
+
+    // 4. Final combined object
+    return {
+      ...user,
+      metadata,
+      taxonomies,
+    };
   } catch (err) {
+    console.error('Error fetching user by ID:', err);
     throw new Error('Error fetching user by ID');
   }
 };
@@ -744,7 +774,9 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
     throw new Error('Error searching users');
   }
 };
-const getUsersByIds = async (ids) => {
+const getUsersByIds = async (ids = []) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
   try {
     const usersRes = await pool.query(
       `SELECT id, email, phone, role, status, created_at 
@@ -756,28 +788,73 @@ const getUsersByIds = async (ids) => {
     const users = usersRes.rows;
     if (users.length === 0) return [];
 
+    const userIds = users.map(u => u.id);
+
     const metaRes = await pool.query(
       `SELECT user_id, key, value 
        FROM user_metadata 
        WHERE user_id = ANY($1::int[])`,
-      [ids]
+      [userIds]
     );
 
-    const metadata = {};
-    metaRes.rows.forEach(meta => {
-      if (!metadata[meta.user_id]) metadata[meta.user_id] = {};
-      metadata[meta.user_id][meta.key] = meta.value;
+    const metadataMap = {};
+    metaRes.rows.forEach(({ user_id, key, value }) => {
+      if (!metadataMap[user_id]) metadataMap[user_id] = {};
+      metadataMap[user_id][key] = value;
     });
+
+    const taxoRes = await pool.query(
+      `
+      SELECT tr.type_id AS user_id,
+             tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+             t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+      FROM taxonomy_relationships tr
+      JOIN terms t ON t.id = tr.term_id
+      JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+      WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
+      ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
+      `,
+      [userIds]
+    );
+
+    const taxoMap = {};
+    for (const row of taxoRes.rows) {
+      if (!taxoMap[row.user_id]) taxoMap[row.user_id] = {};
+      const userTax = taxoMap[row.user_id];
+
+      if (!userTax[row.taxonomy_id]) {
+        userTax[row.taxonomy_id] = {
+          id: row.taxonomy_id,
+          slug: row.taxonomy_slug,
+          title: row.taxonomy_title,
+          terms: [],
+        };
+      }
+
+      userTax[row.taxonomy_id].terms.push({
+        id: row.term_id,
+        slug: row.term_slug,
+        title: row.term_title,
+        parent_id: row.parent_id,
+      });
+    }
 
     return users.map(user => ({
       ...user,
-      metadata: metadata[user.id] || {}
+      metadata: metadataMap[user.id] || {},
+      taxonomies: taxoMap[user.id]
+        ? Object.values(taxoMap[user.id]).map(tx => ({
+            ...tx,
+            terms: buildHierarchy(tx.terms),
+          }))
+        : [],
     }));
   } catch (error) {
     console.error("Error in getUsersByIds:", error);
     throw new Error("Error fetching multiple users by ID");
   }
 };
+
 
 module.exports = {
   normalizePhone,
