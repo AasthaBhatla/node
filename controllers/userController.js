@@ -96,6 +96,7 @@ exports.updateMe = async (req, res) => {
 exports.getUsers = async (req, res) => {
   try {
     const {
+      termIds,  
       role,
       status,
       count,
@@ -109,6 +110,7 @@ exports.getUsers = async (req, res) => {
     } = req.body;
 
     const filters = {
+      termIds,  
       role,
       status,
       count: parseInt(count) || 10,

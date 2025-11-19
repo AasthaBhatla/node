@@ -167,6 +167,7 @@ const getUserById = async (userId) => {
 
 const getUsers = async (filters = {}) => {
   const {
+    termIds,  
     role,
     status,
     count = 10,
@@ -184,6 +185,14 @@ const getUsers = async (filters = {}) => {
   const where = [];
   let i = 1;
 
+   if (termIds !== undefined && termIds !== null) {
+    const termArr = Array.isArray(termIds) ? termIds : [termIds];
+    joins += ` JOIN taxonomy_relationships tr_filter ON tr_filter.type_id = u.id 
+                AND tr_filter.type = 'user' 
+                AND tr_filter.term_id = ANY($${i}::int[])`;
+    values.push(termArr);
+    i++;
+  }
   if (role) {
     where.push(`u.role = $${i++}`);
     values.push(role);
