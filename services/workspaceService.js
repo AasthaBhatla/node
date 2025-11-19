@@ -52,7 +52,6 @@ const deleteWorkspace = async (workspaceId, userId) => {
   }
 };
 
-
 const getWorkspacesWithMetadata = async (userId) => {
   try {
     const result = await pool.query(
@@ -82,7 +81,7 @@ const getWorkspacesWithMetadata = async (userId) => {
           type: row.type,
           title: row.title,
           created_at: row.created_at,
-          metadata: {}
+          metadata: {},
         });
       }
       if (row.meta_key) {
@@ -97,43 +96,40 @@ const getWorkspacesWithMetadata = async (userId) => {
   }
 };
 
-
-const upsertWorkspaceMetadata = async (workspaceId, items = []) => {
+const upsertWorkspaceMetadata = async (workspaceId, metadata = {}) => {
   try {
-    if (!Array.isArray(items) || items.length === 0) return [];
+    if (!metadata || typeof metadata !== "object") return [];
 
-    const map = new Map();
-    for (const item of items) {
-      if (item && item.key) {
-        map.set(item.key, item.value ?? null);
-      }
-    }
+    // Convert object into [key, value] pairs and filter invalid keys
+    const entries = Object.entries(metadata).filter(
+      ([key]) => key !== undefined && key !== null && key !== ""
+    );
 
-    if (map.size === 0) return [];
+    if (entries.length === 0) return [];
 
-    const values = [];
-    let paramIndex = 2; 
+    const values = [workspaceId]; // $1 is workspace_id
     const rowsPlaceholders = [];
+    let paramIndex = 2;
 
-    for (const [key, value] of map.entries()) {
+    for (const [key, value] of entries) {
       rowsPlaceholders.push(`($1, $${paramIndex}, $${paramIndex + 1})`);
-      values.push(key, value);
+      values.push(key, value !== undefined ? String(value) : null);
       paramIndex += 2;
     }
 
     const query = `
       INSERT INTO workspace_metadata (workspace_id, meta_key, meta_value)
-      VALUES ${rowsPlaceholders.join(', ')}
+      VALUES ${rowsPlaceholders.join(", ")}
       ON CONFLICT (workspace_id, meta_key)
       DO UPDATE SET meta_value = EXCLUDED.meta_value
       RETURNING *;
     `;
 
-    const { rows } = await pool.query(query, [workspaceId, ...values]);
+    const { rows } = await pool.query(query, values);
     return rows;
   } catch (err) {
-    console.error('Error in upsertWorkspaceMetadataBulk:', err);
-    throw new Error('Error updating metadata');
+    console.error("Error in upsertWorkspaceMetadata:", err);
+    throw new Error("Error updating metadata");
   }
 };
 
@@ -181,4 +177,3 @@ module.exports = {
   getWorkspaceMetadata,
   deleteWorkspaceMetadata,
 };
-
