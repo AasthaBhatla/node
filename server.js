@@ -22,7 +22,7 @@ const optionsRoutes = require("./routes/optionsRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const reviewsRoutes = require("./routes/reviewsRoutes");
 const relationshipRoutes = require("./routes/relationshipRoutes");
-const s3Routes = require("./routes/s3Routes");
+//const s3Routes = require("./routes/s3Routes");
 const walletRoutes = require("./routes/walletRoutes");
 const workspaceRoutes = require("./routes/workspaceRoutes");
 
@@ -42,7 +42,7 @@ app.use("/options", optionsRoutes);
 app.use("/orders", orderRoutes);
 app.use("/reviews", reviewsRoutes);
 app.use("/relationships", relationshipRoutes);
-app.use("/uploadnow", s3Routes);
+//app.use("/uploadnow", s3Routes);
 app.use("/wallet", walletRoutes);
 app.use("/workspace", workspaceRoutes);
 

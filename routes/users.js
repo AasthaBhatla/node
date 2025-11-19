@@ -8,7 +8,7 @@ const uploadProfile = getUpload('profile');
 const uploadDocument = getUpload('document');
 
 router.post('/by-ids', authMiddleware, userController.getUsersByIds); 
-router.post('/by-terms', authMiddleware, userController.getUsersByTerms);
+router.post('/by-terms', userController.getUsersByTerms);
 router.get('/me', authMiddleware, userController.getMe);
 router.get('/search',authMiddleware, userController.searchUsers);
 router.post('/me', authMiddleware, userController.updateMe);

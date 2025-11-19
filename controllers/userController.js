@@ -329,20 +329,35 @@ exports.deleteUser = async (req, res) => {
 
 exports.getUsersByTerms = async (req, res) => {
   try {
-    const { termIds } = req.body;
+    const { termIds, role, groupByRole } = req.body;
 
     if (!termIds || !Array.isArray(termIds) || termIds.length === 0) {
-      return res.status(400).json({ error: 'termIds must be a non-empty array' });
+      return res.status(400).json({ error: "termIds must be a non-empty array" });
     }
 
-    const users = await getUsersByTermIds(termIds);
+    let roleList = null;
+
+    if (role) {
+      if (Array.isArray(role)) {
+        roleList = role;
+      } else {
+        roleList = [role];
+      }
+    }
+
+    const users = await getUsersByTermIds(termIds, roleList);
+
+    if (groupByRole) {
+      return res.status(200).json({ usersByRole: groupUsersByRole(users) });
+    }
 
     return res.status(200).json({ users });
   } catch (error) {
-    console.error('Error fetching users by terms:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error("Error fetching users by terms:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 exports.searchUsers = async (req, res) => {
   try {
     const { keyword } = req.query;

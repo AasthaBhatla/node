@@ -129,7 +129,6 @@ const updateUserRole = async (userId, role) => {
 
 const getUserById = async (userId) => {
   try {
-    // 1. Basic user info
     const userRes = await pool.query(
       `SELECT id, email, phone, status, role, created_at 
        FROM users 
@@ -141,7 +140,6 @@ const getUserById = async (userId) => {
 
     const user = userRes.rows[0];
 
-    // 2. Metadata (same shape as in getUsers)
     const metaRes = await pool.query(
       `SELECT key, value 
        FROM user_metadata 
@@ -154,10 +152,8 @@ const getUserById = async (userId) => {
       metadata[key] = value;
     });
 
-    // 3. Taxonomies + terms (reuse existing helper)
     const taxonomies = await getUserTaxonomies(userId);
 
-    // 4. Final combined object
     return {
       ...user,
       metadata,
@@ -558,10 +554,13 @@ const deleteUser = async (userId) => {
     throw new Error('Error deleting user');
   }
 };
-const getUsersByTermIds = async (termIds = []) => {
+const getUsersByTermIds = async (termIds = [], roles = null) => {
   if (!Array.isArray(termIds) || termIds.length === 0) return [];
 
-  const query = `
+  const params = [termIds];
+  let paramIndex = 2;
+
+  let query = `
     SELECT 
       u.id,
       u.email,
@@ -579,25 +578,85 @@ const getUsersByTermIds = async (termIds = []) => {
       ) AS metadata
     FROM users u
     JOIN taxonomy_relationships tr 
-      ON tr.type_id = u.id AND tr.type = 'user' AND tr.term_id = ANY($1::int[])
+      ON tr.type_id = u.id 
+     AND tr.type = 'user' 
+     AND tr.term_id = ANY($1::int[])
     LEFT JOIN terms t ON t.id = tr.term_id
     LEFT JOIN user_metadata um ON um.user_id = u.id
+  `;
+
+  if (roles && Array.isArray(roles) && roles.length > 0) {
+    query += ` WHERE u.role = ANY($${paramIndex}::text[])`;
+    params.push(roles);
+    paramIndex++;
+  } else if (roles && !Array.isArray(roles)) {
+    query += ` WHERE u.role = $${paramIndex}`;
+    params.push(roles);
+    paramIndex++;
+  }
+
+  query += `
     GROUP BY u.id
     ORDER BY u.created_at DESC
   `;
 
-  try {
-    const { rows } = await pool.query(query, [termIds]);
-    return rows.map((u) => ({
-      ...u,
-      terms: u.terms || [],
-      metadata: u.metadata || {},
-    }));
-  } catch (err) {
-    console.error('Error in getUsersByTermIds:', err);
-    throw new Error('Error fetching users by term IDs');
+  const { rows } = await pool.query(query, params);
+
+  if (!rows.length) return [];
+
+  const users = rows.map((u) => ({
+    ...u,
+    terms: u.terms || [],
+    metadata: u.metadata || {},
+  }));
+  const userIds = users.map(u => u.id);
+
+  const taxoQuery = `
+    SELECT tr.type_id AS user_id,
+           tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+           t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+    FROM taxonomy_relationships tr
+    JOIN terms t ON tr.term_id = t.id
+    JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+    WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
+    ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
+  `;
+
+  const taxoResult = await pool.query(taxoQuery, [userIds]);
+
+  const taxoMap = {};
+  for (const row of taxoResult.rows) {
+    if (!taxoMap[row.user_id]) taxoMap[row.user_id] = {};
+    const userTax = taxoMap[row.user_id];
+
+    if (!userTax[row.taxonomy_id]) {
+      userTax[row.taxonomy_id] = {
+        id: row.taxonomy_id,
+        slug: row.taxonomy_slug,
+        title: row.taxonomy_title,
+        terms: [],
+      };
+    }
+
+    userTax[row.taxonomy_id].terms.push({
+      id: row.term_id,
+      slug: row.term_slug,
+      title: row.term_title,
+      parent_id: row.parent_id,
+    });
   }
+
+  return users.map((user) => ({
+    ...user,
+    taxonomies: taxoMap[user.id]
+      ? Object.values(taxoMap[user.id]).map(tx => ({
+          ...tx,
+          terms: buildHierarchy(tx.terms),
+        }))
+      : [],
+  }));
 };
+
 
 const buildHierarchy = (terms) => {
   const map = {};
