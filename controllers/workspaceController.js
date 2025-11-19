@@ -9,7 +9,7 @@ const {
 } = require('../services/workspaceService');
 
 const isAllowed = (user) => {
-  return user && ['user', 'admin'].includes(user.role?.toLowerCase());
+  return user && ['client', 'admin'].includes(user.role?.toLowerCase());
 };
 
 exports.create = async (req, res) => {
