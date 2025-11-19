@@ -8,7 +8,8 @@ const {
 
 exports.create = async (req, res) => {
   try {
-    const reviewer_id = req.user?.id;
+    let reviewer_id = req.body.reviewer_id || req.user?.id;
+
     const { type, type_id, review, ratings, metadata, status } = req.body;
 
     if (!reviewer_id || !type || !type_id || !review || ratings == null) {
