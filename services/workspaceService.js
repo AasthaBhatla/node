@@ -96,24 +96,28 @@ const getWorkspacesWithMetadata = async (userId) => {
   }
 };
 
-const upsertWorkspaceMetadata = async (workspaceId, metadata = {}) => {
+const upsertWorkspaceMetadata = async (workspaceId, items = []) => {
   try {
-    if (!metadata || typeof metadata !== "object") return [];
+    if (!Array.isArray(items)) return [];
 
-    // Convert object into [key, value] pairs and filter invalid keys
-    const entries = Object.entries(metadata).filter(
-      ([key]) => key !== undefined && key !== null && key !== ""
-    );
+    // Expect items: [{ key, value }, ...]
+    const cleaned = items
+      .filter((it) => it && typeof it === "object")
+      .map(({ key, value }) => ({
+        key: key != null ? String(key).trim() : "",
+        value: value === undefined ? null : String(value),
+      }))
+      .filter((it) => it.key !== "");
 
-    if (entries.length === 0) return [];
+    if (cleaned.length === 0) return [];
 
-    const values = [workspaceId]; // $1 is workspace_id
+    const values = [workspaceId]; // $1
     const rowsPlaceholders = [];
     let paramIndex = 2;
 
-    for (const [key, value] of entries) {
+    for (const { key, value } of cleaned) {
       rowsPlaceholders.push(`($1, $${paramIndex}, $${paramIndex + 1})`);
-      values.push(key, value !== undefined ? String(value) : null);
+      values.push(key, value);
       paramIndex += 2;
     }
 
