@@ -96,6 +96,43 @@ const getWorkspacesWithMetadata = async (userId) => {
   }
 };
 
+const getWorkspaceByIdWithMetadata = async (workspaceId, userId) => {
+  const result = await pool.query(
+    `SELECT 
+      w.id AS workspace_id,
+      w.user_id,
+      w.type,
+      w.title,
+      w.created_at,
+      m.meta_key,
+      m.meta_value
+    FROM workspace w
+    LEFT JOIN workspace_metadata m
+      ON m.workspace_id = w.id
+    WHERE w.id = $1 AND w.user_id = $2`,
+    [workspaceId, userId]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const first = result.rows[0];
+
+  const workspace = {
+    id: first.workspace_id,
+    user_id: first.user_id,
+    type: first.type,
+    title: first.title,
+    created_at: first.created_at,
+    metadata: {},
+  };
+
+  for (const row of result.rows) {
+    if (row.meta_key) workspace.metadata[row.meta_key] = row.meta_value;
+  }
+
+  return workspace;
+};
+
 const upsertWorkspaceMetadata = async (workspaceId, items = []) => {
   try {
     if (!Array.isArray(items)) return [];
@@ -180,4 +217,5 @@ module.exports = {
   upsertWorkspaceMetadata,
   getWorkspaceMetadata,
   deleteWorkspaceMetadata,
+  getWorkspaceByIdWithMetadata,
 };

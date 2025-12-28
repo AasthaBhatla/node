@@ -6,10 +6,19 @@ const workspaceController = require("../controllers/workspaceController");
 
 router.post("/", authMiddleware, workspaceController.create);
 router.get("/", authMiddleware, workspaceController.getMyWorkspaces);
+router.get("/:id", authMiddleware, workspaceController.getById);
 router.post("/:id", authMiddleware, workspaceController.update);
 router.delete("/:id", authMiddleware, workspaceController.delete);
-router.post("/:id/metadata", authMiddleware, workspaceController.updateMetadata);
+router.post(
+  "/:id/metadata",
+  authMiddleware,
+  workspaceController.updateMetadata
+);
 router.get("/:id/metadata", authMiddleware, workspaceController.getMetadata);
-router.delete("/:id/metadata", authMiddleware, workspaceController.deleteMetadata);
+router.delete(
+  "/:id/metadata",
+  authMiddleware,
+  workspaceController.deleteMetadata
+);
 
 module.exports = router;

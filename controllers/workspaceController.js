@@ -6,6 +6,7 @@ const {
   upsertWorkspaceMetadata,
   getWorkspaceMetadata,
   deleteWorkspaceMetadata,
+  getWorkspaceByIdWithMetadata,
 } = require("../services/workspaceService");
 
 const isAllowed = (user) => {
@@ -59,6 +60,33 @@ exports.getMyWorkspaces = async (req, res) => {
   } catch (err) {
     console.error("Get Workspaces Error:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!isAllowed(user)) {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Only User & Admin allowed." });
+    }
+
+    const workspaceId = parseInt(req.params.id, 10);
+    if (!workspaceId) {
+      return res.status(400).json({ error: "workspaceId is required" });
+    }
+
+    const workspace = await getWorkspaceByIdWithMetadata(workspaceId, user.id);
+
+    if (!workspace) {
+      return res.status(404).json({ error: "Workspace not found" });
+    }
+
+    return res.status(200).json({ success: true, data: workspace });
+  } catch (err) {
+    console.error("Get Workspace By Id Error:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
