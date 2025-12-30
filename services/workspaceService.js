@@ -174,6 +174,46 @@ const upsertWorkspaceMetadata = async (workspaceId, items = []) => {
   }
 };
 
+const upsertWorkspaceMetadataTx = async (client, workspaceId, items = []) => {
+  try {
+    if (!Array.isArray(items)) return [];
+
+    const cleaned = items
+      .filter((it) => it && typeof it === "object")
+      .map(({ key, value }) => ({
+        key: key != null ? String(key).trim() : "",
+        value: value === undefined ? null : String(value),
+      }))
+      .filter((it) => it.key !== "");
+
+    if (cleaned.length === 0) return [];
+
+    const values = [workspaceId];
+    const rowsPlaceholders = [];
+    let paramIndex = 2;
+
+    for (const { key, value } of cleaned) {
+      rowsPlaceholders.push(`($1, $${paramIndex}, $${paramIndex + 1})`);
+      values.push(key, value);
+      paramIndex += 2;
+    }
+
+    const query = `
+      INSERT INTO workspace_metadata (workspace_id, meta_key, meta_value)
+      VALUES ${rowsPlaceholders.join(", ")}
+      ON CONFLICT (workspace_id, meta_key)
+      DO UPDATE SET meta_value = EXCLUDED.meta_value
+      RETURNING *;
+    `;
+
+    const { rows } = await client.query(query, values);
+    return rows;
+  } catch (err) {
+    console.error("Error in upsertWorkspaceMetadataTx:", err);
+    throw new Error("Error updating metadata");
+  }
+};
+
 const getWorkspaceMetadata = async (workspaceId) => {
   try {
     const result = await pool.query(
@@ -209,6 +249,90 @@ const deleteWorkspaceMetadata = async (workspaceId, key) => {
   }
 };
 
+const updateWorkspaceAndMetadata = async (
+  workspaceId,
+  userId,
+  payload = {}
+) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1) Update workspace fields if provided
+    const fields = [];
+    const values = [workspaceId, userId];
+    let idx = 3;
+
+    if (payload.title !== undefined) {
+      fields.push(`title = $${idx++}`);
+      values.push(payload.title);
+    }
+    if (payload.type !== undefined) {
+      fields.push(`type = $${idx++}`);
+      values.push(payload.type);
+    }
+
+    let workspaceRow = null;
+
+    if (fields.length > 0) {
+      const wsRes = await client.query(
+        `UPDATE workspace
+         SET ${fields.join(", ")}
+         WHERE id = $1 AND user_id = $2
+         RETURNING *`,
+        values
+      );
+      workspaceRow = wsRes.rows[0] || null;
+      if (!workspaceRow) {
+        await client.query("ROLLBACK");
+        return null; // not found / not owned
+      }
+    } else {
+      // If no workspace fields to update, still ensure workspace exists + owned
+      const wsRes = await client.query(
+        `SELECT * FROM workspace WHERE id = $1 AND user_id = $2`,
+        [workspaceId, userId]
+      );
+      workspaceRow = wsRes.rows[0] || null;
+      if (!workspaceRow) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+    }
+
+    // 2) Upsert metadata if provided
+    if (payload.metadata !== undefined && !Array.isArray(payload.metadata)) {
+      await client.query("ROLLBACK");
+      throw new Error("metadata must be an array of { key, value }");
+    }
+
+    if (payload.metadata !== undefined) {
+      await upsertWorkspaceMetadataTx(client, workspaceId, payload.metadata);
+    }
+
+    // 3) Return final workspace + metadata (consistent)
+    const metaRes = await client.query(
+      `SELECT meta_key, meta_value
+       FROM workspace_metadata
+       WHERE workspace_id = $1`,
+      [workspaceId]
+    );
+
+    const metadata = {};
+    for (const r of metaRes.rows) metadata[r.meta_key] = r.meta_value;
+
+    await client.query("COMMIT");
+
+    return { ...workspaceRow, metadata };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error in updateWorkspaceAndMetadata:", err);
+    throw new Error("Error updating workspace");
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   createWorkspace,
   updateWorkspaceTitle,
@@ -218,4 +342,6 @@ module.exports = {
   getWorkspaceMetadata,
   deleteWorkspaceMetadata,
   getWorkspaceByIdWithMetadata,
+  updateWorkspaceAndMetadata,
+  upsertWorkspaceMetadataTx,
 };

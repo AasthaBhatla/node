@@ -7,6 +7,7 @@ const {
   getWorkspaceMetadata,
   deleteWorkspaceMetadata,
   getWorkspaceByIdWithMetadata,
+  updateWorkspaceAndMetadata,
 } = require("../services/workspaceService");
 
 const isAllowed = (user) => {
@@ -115,30 +116,40 @@ exports.update = async (req, res) => {
         .json({ error: "Access denied. Only User & Admin allowed." });
     }
 
-    const workspaceId = parseInt(req.params.id);
-    const { title } = req.body;
-
-    if (!workspaceId || !title) {
-      return res
-        .status(400)
-        .json({ error: "workspaceId and title are required" });
+    const workspaceId = parseInt(req.params.id, 10);
+    if (!workspaceId) {
+      return res.status(400).json({ error: "workspaceId is required" });
     }
 
-    const updated = await updateWorkspaceTitle(workspaceId, user.id, title);
+    const { title, type, metadata } = req.body || {};
+
+    // Must update at least something
+    const hasWorkspaceFields = title !== undefined || type !== undefined;
+    const hasMetadata = metadata !== undefined;
+
+    if (!hasWorkspaceFields && !hasMetadata) {
+      return res.status(400).json({
+        error: "Nothing to update. Provide title/type and/or metadata.",
+      });
+    }
+
+    const updated = await updateWorkspaceAndMetadata(workspaceId, user.id, {
+      title,
+      type,
+      metadata,
+    });
 
     if (!updated) {
       return res.status(404).json({ error: "Workspace not found" });
     }
 
-    const metadata = await getWorkspaceMetadata(workspaceId);
-
     return res.status(200).json({
       message: "Workspace updated successfully",
-      data: { ...updated, metadata },
+      data: updated,
     });
   } catch (err) {
     console.error("Update Workspace Error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
