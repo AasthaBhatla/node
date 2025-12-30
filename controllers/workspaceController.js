@@ -30,11 +30,27 @@ exports.create = async (req, res) => {
     const workspace = await createWorkspace(user.id, type, title);
 
     let metaRows = [];
-    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-      metaRows = await upsertWorkspaceMetadata(workspace.id, metadata);
+
+    // Allow metadata as object OR array
+    if (metadata && typeof metadata === "object") {
+      let items = [];
+
+      if (Array.isArray(metadata)) {
+        // If metadata is already [{key,value}]
+        items = metadata;
+      } else {
+        // Convert {a:1,b:2} -> [{key:"a",value:1},{key:"b",value:2}]
+        items = Object.entries(metadata).map(([key, value]) => ({
+          key,
+          value,
+        }));
+      }
+
+      metaRows = await upsertWorkspaceMetadata(workspace.id, items);
     }
 
-    const meta = metaRows; // or `await getWorkspaceMetadata(workspace.id);`
+    // If you want metadata object in response
+    const meta = await getWorkspaceMetadata(workspace.id);
 
     return res.status(201).json({
       message: "Workspace created successfully",
