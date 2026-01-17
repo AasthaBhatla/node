@@ -1,7 +1,7 @@
-const db = require('../db'); 
-const fs = require('fs');
-const path = require('path');
-const { 
+const db = require("../db");
+const fs = require("fs");
+const path = require("path");
+const {
   getUserById,
   getUserMetadata,
   updateUserMetadata,
@@ -20,56 +20,61 @@ const {
   buildHierarchy,
   getUserTaxonomies,
   searchUsers,
-  getUsersByIds   
-} = require('../services/userService');
-
+  getUsersByIds,
+  findUsersPublic,
+} = require("../services/userService");
 
 exports.getMe = async (req, res) => {
   const user_id = req.user.id;
 
   try {
-    const user = await getUserById(user_id); 
+    const user = await getUserById(user_id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: "User not found" });
     }
 
-    const metadata = await getUserMetadata(user_id); 
+    const metadata = await getUserMetadata(user_id);
     res.json({ ...user, metadata });
   } catch (err) {
-    console.error('Get user error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get user error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 };
 
 exports.updateMe = async (req, res) => {
   const user_id = req.user.id;
-  const { gender, language_id, add_terms, remove_terms, ...otherMetadata } = req.body;
+  const { gender, language_id, add_terms, remove_terms, ...otherMetadata } =
+    req.body;
 
-  const allowed_genders = ['male', 'female', 'other'];
+  const allowed_genders = ["male", "female", "other"];
 
   if (gender && !allowed_genders.includes(gender.toLowerCase())) {
-    return res.status(400).json({ error: 'Invalid gender' });
+    return res.status(400).json({ error: "Invalid gender" });
   }
 
-  if (language_id && typeof language_id !== 'number') {
-    return res.status(400).json({ error: 'language_id must be a number' });
+  if (language_id && typeof language_id !== "number") {
+    return res.status(400).json({ error: "language_id must be a number" });
   }
 
   if (add_terms && !Array.isArray(add_terms)) {
-    return res.status(400).json({ error: 'add_terms must be an array of term IDs' });
+    return res
+      .status(400)
+      .json({ error: "add_terms must be an array of term IDs" });
   }
 
   if (remove_terms && !Array.isArray(remove_terms)) {
-    return res.status(400).json({ error: 'remove_terms must be an array of term IDs' });
+    return res
+      .status(400)
+      .json({ error: "remove_terms must be an array of term IDs" });
   }
 
   try {
     const user = await getUserById(user_id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     const metadataUpdates = {
       ...otherMetadata,
-      ...(gender && { gender: gender.toLowerCase() })
+      ...(gender && { gender: gender.toLowerCase() }),
     };
     if (Object.keys(metadataUpdates).length > 0) {
       await updateUserMetadata(user_id, metadataUpdates);
@@ -86,17 +91,17 @@ exports.updateMe = async (req, res) => {
       await removeUserTerms(user_id, remove_terms);
     }
 
-    res.json({ message: 'Profile updated successfully' });
+    res.json({ message: "Profile updated successfully" });
   } catch (err) {
-    console.error('Update user error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Update user error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 };
 
 exports.getUsers = async (req, res) => {
   try {
     const {
-      termIds,  
+      termIds,
       role,
       status,
       count,
@@ -106,11 +111,11 @@ exports.getUsers = async (req, res) => {
       email,
       phone,
       search,
-      metaQuery
+      metaQuery,
     } = req.body;
 
     const filters = {
-      termIds,  
+      termIds,
       role,
       status,
       count: parseInt(count) || 10,
@@ -126,8 +131,8 @@ exports.getUsers = async (req, res) => {
     const users = await getUsers(filters);
     res.status(200).json({ users });
   } catch (err) {
-    console.error('Error in getUsers controller:', err);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    console.error("Error in getUsers controller:", err);
+    res.status(500).json({ error: "Failed to fetch users" });
   }
 };
 
@@ -136,13 +141,13 @@ exports.getUserById = async (req, res) => {
 
   try {
     const user = await getUserById(user_id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    const metadata = await getUserMetadata(user_id); 
+    const metadata = await getUserMetadata(user_id);
     res.json({ ...user, metadata });
   } catch (err) {
-    console.error('Get user by ID error:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get user by ID error:", err);
+    res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -192,49 +197,59 @@ exports.uploadProfilePic = async (req, res) => {
     const user_id = req.user.id;
 
     if (!req.file) {
-      return res.status(400).json({ error: 'Profile picture file is required' });
+      return res
+        .status(400)
+        .json({ error: "Profile picture file is required" });
     }
 
-    const profile_pic_url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const profile_pic_url = `${req.protocol}://${req.get("host")}/uploads/${
+      req.file.filename
+    }`;
 
     await updateProfilePicUrl(user_id, profile_pic_url);
 
-    res.status(200).json({ message: 'Profile picture updated successfully', url: profile_pic_url });
+    res.status(200).json({
+      message: "Profile picture updated successfully",
+      url: profile_pic_url,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to update profile picture' });
+    res.status(500).json({ error: "Failed to update profile picture" });
   }
 };
 
 exports.uploadDocument = async (req, res) => {
   const user_role = req.user.role;
-  const allowed_roles = ['admin', 'lawyer', 'expert'];
+  const allowed_roles = ["admin", "lawyer", "expert"];
 
   if (!allowed_roles.includes(user_role)) {
-    return res.status(403).json({ error: 'Access denied. Only admin, lawyer, and expert can upload documents.' });
+    return res.status(403).json({
+      error:
+        "Access denied. Only admin, lawyer, and expert can upload documents.",
+    });
   }
 
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const file_path = path.join('uploads', 'documents', req.file.filename);
+  const file_path = path.join("uploads", "documents", req.file.filename);
   const original_name = req.file.originalname;
 
   try {
     await addDocumentToMetadata(req.user.id, {
       path: file_path,
       name: original_name,
-      uploaded_at: new Date().toISOString()
+      uploaded_at: new Date().toISOString(),
     });
 
     return res.status(200).json({
-      message: 'Document uploaded successfully',
-      file_path
+      message: "Document uploaded successfully",
+      file_path,
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Failed to upload document' });
+    return res.status(500).json({ error: "Failed to upload document" });
   }
 };
 
@@ -251,36 +266,37 @@ exports.deleteDocument = async (req, res) => {
     try {
       const outer_parsed = JSON.parse(metadata.documents);
 
-      documents = typeof outer_parsed.documents === 'string'
-        ? JSON.parse(outer_parsed.documents)
-        : outer_parsed.documents;
-
+      documents =
+        typeof outer_parsed.documents === "string"
+          ? JSON.parse(outer_parsed.documents)
+          : outer_parsed.documents;
     } catch (err) {
       console.error("Failed to parse documents JSON:", err);
-      return res.status(500).json({ error: 'Invalid document metadata format' });
+      return res
+        .status(500)
+        .json({ error: "Invalid document metadata format" });
     }
 
-    const doc_to_delete = documents.find(doc => doc.name === name);
+    const doc_to_delete = documents.find((doc) => doc.name === name);
     if (!doc_to_delete) {
-      return res.status(404).json({ error: 'Document not found' });
+      return res.status(404).json({ error: "Document not found" });
     }
 
     await removeDocumentFromMetadata(user_id, name);
 
-    const full_path = path.join(__dirname, '..', '..', doc_to_delete.path);
+    const full_path = path.join(__dirname, "..", "..", doc_to_delete.path);
     console.log("Deleting file at:", full_path);
 
     try {
       await fs.promises.unlink(full_path);
     } catch (err) {
-      console.warn('Failed to delete file from disk:', err.message);
+      console.warn("Failed to delete file from disk:", err.message);
     }
 
-    return res.status(200).json({ message: 'Document deleted successfully' });
-
+    return res.status(200).json({ message: "Document deleted successfully" });
   } catch (err) {
-    console.error('Delete document error:', err);
-    return res.status(500).json({ error: 'Failed to delete document' });
+    console.error("Delete document error:", err);
+    return res.status(500).json({ error: "Failed to delete document" });
   }
 };
 
@@ -289,24 +305,23 @@ exports.listUserDocuments = async (req, res) => {
 
   try {
     const user = await getUserById(user_id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    const allowed_roles = ['admin', 'lawyer', 'expert'];
+    const allowed_roles = ["admin", "lawyer", "expert"];
     if (!allowed_roles.includes(user.role)) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({ error: "Access denied" });
     }
 
     const documents = await getUserDocuments(user_id);
     return res.status(200).json({ documents });
-
   } catch (err) {
-    console.error('Error listing documents:', err);
-    return res.status(500).json({ error: 'Failed to list documents' });
+    console.error("Error listing documents:", err);
+    return res.status(500).json({ error: "Failed to list documents" });
   }
 };
 
 exports.deleteUser = async (req, res) => {
-  const requesting_user = req.user;  
+  const requesting_user = req.user;
   const target_user_id = req.params.id;
 
   if (!requesting_user || requesting_user.role !== "admin") {
@@ -319,9 +334,9 @@ exports.deleteUser = async (req, res) => {
 
     const deletedUser = await deleteUser(target_user_id);
 
-    res.status(200).json({ 
-      message: "User deleted successfully", 
-      deleted: deletedUser 
+    res.status(200).json({
+      message: "User deleted successfully",
+      deleted: deletedUser,
     });
   } catch (err) {
     console.error("Delete user error:", err);
@@ -334,7 +349,9 @@ exports.getUsersByTerms = async (req, res) => {
     const { termIds, role, groupByRole } = req.body;
 
     if (!termIds || !Array.isArray(termIds) || termIds.length === 0) {
-      return res.status(400).json({ error: "termIds must be a non-empty array" });
+      return res
+        .status(400)
+        .json({ error: "termIds must be a non-empty array" });
     }
 
     let roleList = null;
@@ -366,29 +383,92 @@ exports.searchUsers = async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
 
-    if (!keyword || keyword.trim() === '') {
-      return res.status(400).json({ error: 'keyword is required' });
+    if (!keyword || keyword.trim() === "") {
+      return res.status(400).json({ error: "keyword is required" });
     }
 
     const users = await searchUsers(keyword.trim(), page, limit);
     return res.status(200).json({ users, page, limit });
   } catch (err) {
-    console.error('Error in searchUsers controller:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error("Error in searchUsers controller:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 exports.getUsersByIds = async (req, res) => {
   try {
     const { ids } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ message: "User ids are required as an array" });
+      return res
+        .status(400)
+        .json({ message: "User ids are required as an array" });
     }
 
-    const users = await getUsersByIds(ids); 
+    const users = await getUsersByIds(ids);
     return res.status(200).json({ users });
   } catch (error) {
     console.error("Error in getUsersByIds:", error);
     return res.status(500).json({ message: "Failed to fetch users by ids" });
+  }
+};
+
+exports.findUsersPublic = async (req, res) => {
+  try {
+    const {
+      keyword,
+      page,
+      limit,
+      user_types,
+      taxonomyFilters,
+      taxonomyRelation,
+      metaFilters,
+      metaRelation,
+    } = req.body || {};
+
+    // Basic validations
+    if (page !== undefined && isNaN(parseInt(page, 10))) {
+      return res.status(400).json({ error: "page must be a number" });
+    }
+    if (limit !== undefined && isNaN(parseInt(limit, 10))) {
+      return res.status(400).json({ error: "limit must be a number" });
+    }
+    if (user_types && !Array.isArray(user_types)) {
+      return res.status(400).json({ error: "user_types must be an array" });
+    }
+    if (taxonomyFilters && !Array.isArray(taxonomyFilters)) {
+      return res
+        .status(400)
+        .json({ error: "taxonomyFilters must be an array" });
+    }
+    if (
+      taxonomyRelation &&
+      !["AND", "OR"].includes(String(taxonomyRelation).toUpperCase())
+    ) {
+      return res
+        .status(400)
+        .json({ error: "taxonomyRelation must be AND or OR" });
+    }
+
+    if (metaFilters && !Array.isArray(metaFilters)) {
+      return res.status(400).json({ error: "metaFilters must be an array" });
+    }
+
+    const result = await require("../services/userService").findUsersPublic({
+      keyword,
+      page,
+      limit,
+      user_types,
+      taxonomyFilters,
+      taxonomyRelation,
+      metaFilters,
+      metaRelation,
+    });
+
+    // ✅ return clean structure
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("Error in findUsersPublic controller:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };

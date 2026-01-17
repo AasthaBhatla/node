@@ -1,11 +1,11 @@
-const pool = require('../db');
+const pool = require("../db");
 
 const normalizePhone = (phone) => {
   if (!phone) return null;
-  phone = phone.replace(/\D/g, '');
-  if (phone.startsWith('0')) phone = phone.slice(1);
-  if (!phone.startsWith('91')) phone = '91' + phone;
-  return '+' + phone;
+  phone = phone.replace(/\D/g, "");
+  if (phone.startsWith("0")) phone = phone.slice(1);
+  if (!phone.startsWith("91")) phone = "91" + phone;
+  return "+" + phone;
 };
 
 const getUserByEmailOrPhone = async (email, phone) => {
@@ -16,7 +16,7 @@ const getUserByEmailOrPhone = async (email, phone) => {
     );
     return result.rows[0];
   } catch (err) {
-    throw new Error('Error fetching user by email or phone');
+    throw new Error("Error fetching user by email or phone");
   }
 };
 
@@ -28,64 +28,54 @@ const insertUser = async (email, phone) => {
     );
     return result.rows[0];
   } catch (err) {
-    throw new Error('Error inserting new user');
+    throw new Error("Error inserting new user");
   }
 };
 
 const setOtp = async (userId) => {
   try {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); 
-    await pool.query(
-      `UPDATE users SET otp = $1 WHERE id = $2`,
-      [otp, userId]
-    );
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await pool.query(`UPDATE users SET otp = $1 WHERE id = $2`, [otp, userId]);
     return otp;
   } catch (err) {
-    throw new Error('Error setting OTP');
+    throw new Error("Error setting OTP");
   }
 };
 
-
 const verifyOtp = async (userId, otp) => {
   try {
-    const result = await pool.query(
-      `SELECT otp FROM users WHERE id = $1`,
-      [userId]
-    );
+    const result = await pool.query(`SELECT otp FROM users WHERE id = $1`, [
+      userId,
+    ]);
     const user = result.rows[0];
     return user && user.otp === otp;
   } catch (err) {
-    throw new Error('Error verifying OTP');
+    throw new Error("Error verifying OTP");
   }
 };
 
 const clearOtp = async (userId) => {
   try {
-    await pool.query(
-      `UPDATE users SET otp = NULL WHERE id = $1`,
-      [userId]
-    );
+    await pool.query(`UPDATE users SET otp = NULL WHERE id = $1`, [userId]);
   } catch (err) {
-    throw new Error('Error clearing OTP');
+    throw new Error("Error clearing OTP");
   }
 };
 
 const markUserAsRegistered = async (userId) => {
   try {
-    await pool.query(
-      `UPDATE users SET status = 'registered' WHERE id = $1`,
-      [userId]
-    );
+    await pool.query(`UPDATE users SET status = 'registered' WHERE id = $1`, [
+      userId,
+    ]);
   } catch (err) {
-    throw new Error('Error marking user as registered');
+    throw new Error("Error marking user as registered");
   }
 };
-
 
 const updateUserMetadata = async (userId, metadata) => {
   try {
     for (const [key, value] of Object.entries(metadata)) {
-      if (key === 'role') continue;
+      if (key === "role") continue;
       await pool.query(
         `INSERT INTO user_metadata (user_id, key, value)
          VALUES ($1, $2, $3)
@@ -94,8 +84,8 @@ const updateUserMetadata = async (userId, metadata) => {
       );
     }
   } catch (err) {
-    console.error('Error in updateUserMetadata:', err);
-    throw new Error('Error updating user metadata');
+    console.error("Error in updateUserMetadata:", err);
+    throw new Error("Error updating user metadata");
   }
 };
 
@@ -111,19 +101,19 @@ const getUserMetadata = async (userId) => {
     });
     return metadata;
   } catch (err) {
-    throw new Error('Error fetching user metadata');
+    throw new Error("Error fetching user metadata");
   }
 };
 
 const updateUserRole = async (userId, role) => {
   try {
-    await pool.query(
-      `UPDATE users SET role = $1 WHERE id = $2`,
-      [role, userId]
-    );
+    await pool.query(`UPDATE users SET role = $1 WHERE id = $2`, [
+      role,
+      userId,
+    ]);
   } catch (err) {
-    console.error('Error in updateUserRole:', err);
-    throw new Error('Error updating user role');
+    console.error("Error in updateUserRole:", err);
+    throw new Error("Error updating user role");
   }
 };
 
@@ -160,20 +150,20 @@ const getUserById = async (userId) => {
       taxonomies,
     };
   } catch (err) {
-    console.error('Error fetching user by ID:', err);
-    throw new Error('Error fetching user by ID');
+    console.error("Error fetching user by ID:", err);
+    throw new Error("Error fetching user by ID");
   }
 };
 
 const getUsers = async (filters = {}) => {
   const {
-    termIds,  
+    termIds,
     role,
     status,
     count = 10,
     page = 1,
-    orderBy = 'created_at',
-    order = 'ASC',
+    orderBy = "created_at",
+    order = "ASC",
     email,
     phone,
     metaQuery,
@@ -181,11 +171,11 @@ const getUsers = async (filters = {}) => {
   } = filters;
 
   const values = [];
-  let joins = '';
+  let joins = "";
   const where = [];
   let i = 1;
 
-   if (termIds !== undefined && termIds !== null) {
+  if (termIds !== undefined && termIds !== null) {
     const termArr = Array.isArray(termIds) ? termIds : [termIds];
     joins += ` JOIN taxonomy_relationships tr_filter ON tr_filter.type_id = u.id 
                 AND tr_filter.type = 'user' 
@@ -211,7 +201,7 @@ const getUsers = async (filters = {}) => {
   }
 
   if (metaQuery?.conditions?.length) {
-    const logic = metaQuery.relation?.toUpperCase() === 'OR' ? 'OR' : 'AND';
+    const logic = metaQuery.relation?.toUpperCase() === "OR" ? "OR" : "AND";
     metaQuery.conditions.forEach(({ key, value }, index) => {
       const alias = `um_meta_${index}`;
       joins += ` JOIN user_metadata ${alias} ON ${alias}.user_id = u.id AND ${alias}.key = $${i++} AND ${alias}.value = $${i++}`;
@@ -225,8 +215,8 @@ const getUsers = async (filters = {}) => {
     values.push(`%${search.toLowerCase()}%`);
   }
 
-  let orderClause = 'u.created_at';
-  if (orderBy === 'name') {
+  let orderClause = "u.created_at";
+  if (orderBy === "name") {
     orderClause = `(SELECT value FROM user_metadata um_order WHERE um_order.user_id = u.id AND um_order.key = 'name')`;
   }
 
@@ -237,8 +227,8 @@ const getUsers = async (filters = {}) => {
     SELECT DISTINCT u.id, u.email, u.phone, u.status, u.role, u.created_at
     FROM users u
     ${joins}
-    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-    ORDER BY ${orderClause} ${order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}
+    ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    ORDER BY ${orderClause} ${order.toUpperCase() === "DESC" ? "DESC" : "ASC"}
     LIMIT $${i++} OFFSET $${i++};
   `;
 
@@ -246,7 +236,7 @@ const getUsers = async (filters = {}) => {
   const users = result.rows;
   if (!users.length) return [];
 
-  const userIds = users.map(u => u.id);
+  const userIds = users.map((u) => u.id);
 
   const metaResult = await pool.query(
     `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
@@ -259,7 +249,8 @@ const getUsers = async (filters = {}) => {
     metadataMap[user_id][key] = value;
   });
 
-  const taxoResult = await pool.query(`
+  const taxoResult = await pool.query(
+    `
     SELECT tr.type_id AS user_id, 
            tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
            t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
@@ -268,7 +259,9 @@ const getUsers = async (filters = {}) => {
     JOIN taxonomy tx ON tr.taxonomy_id = tx.id
     WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
     ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
-  `, [userIds]);
+  `,
+    [userIds]
+  );
 
   const taxoMap = {};
   for (const row of taxoResult.rows) {
@@ -296,7 +289,7 @@ const getUsers = async (filters = {}) => {
     ...user,
     metadata: metadataMap[user.id] || {},
     taxonomies: taxoMap[user.id]
-      ? Object.values(taxoMap[user.id]).map(tx => ({
+      ? Object.values(taxoMap[user.id]).map((tx) => ({
           ...tx,
           terms: buildHierarchy(tx.terms),
         }))
@@ -313,7 +306,7 @@ const saveDeviceToken = async (userId, deviceToken) => {
       [userId, deviceToken]
     );
   } catch (err) {
-    throw new Error('Error saving device token');
+    throw new Error("Error saving device token");
   }
 };
 
@@ -325,8 +318,8 @@ const removeDeviceToken = async (userId, deviceToken) => {
     );
     return result.rowCount;
   } catch (error) {
-    console.error('Error removing device token:', error);
-    throw new Error('Failed to remove device token');
+    console.error("Error removing device token:", error);
+    throw new Error("Failed to remove device token");
   }
 };
 
@@ -356,7 +349,7 @@ const getUserProfileById = async (userId, withMetadata = true) => {
     return { ...user, metadata };
   } catch (err) {
     console.error(err);
-    throw new Error('Error fetching user profile');
+    throw new Error("Error fetching user profile");
   }
 };
 
@@ -382,7 +375,7 @@ const addDocumentToMetadata = async (userId, newDoc) => {
     if (res.rows.length > 0) {
       const rawValue = res.rows[0].value;
       try {
-        docs = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        docs = typeof rawValue === "string" ? JSON.parse(rawValue) : rawValue;
         if (!Array.isArray(docs)) docs = [];
       } catch {
         docs = [];
@@ -397,18 +390,16 @@ const addDocumentToMetadata = async (userId, newDoc) => {
        ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
       [userId, JSON.stringify(docs)]
     );
-
   } catch (err) {
-    console.error('Error in addDocumentToMetadata:', err);
-    throw new Error('Failed to add document to metadata');
+    console.error("Error in addDocumentToMetadata:", err);
+    throw new Error("Failed to add document to metadata");
   }
 };
 
 const removeDocumentFromMetadata = async (userId, documentName) => {
   try {
     const result = await pool.query(
-      
-     `UPDATE user_metadata
+      `UPDATE user_metadata
       SET value = jsonb_set(
         value::jsonb,
         '{documents}',
@@ -430,27 +421,29 @@ const removeDocumentFromMetadata = async (userId, documentName) => {
     );
 
     if (result.rowCount === 0) {
-      throw new Error('Document not found or user does not have documents metadata.');
+      throw new Error(
+        "Document not found or user does not have documents metadata."
+      );
     }
 
     return result.rows[0];
   } catch (err) {
-    console.error('Error in removeDocumentFromMetadata:', err);
-    throw new Error('Error removing document from metadata');
+    console.error("Error in removeDocumentFromMetadata:", err);
+    throw new Error("Error removing document from metadata");
   }
 };
 
 const getUserDocuments = async (userId) => {
   try {
     const result = await pool.query(
-       "SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'",
-       [userId]
+      "SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'",
+      [userId]
     );
-    if (result.rows.length === 0) return []
+    if (result.rows.length === 0) return [];
     return JSON.parse(result.rows[0].value);
   } catch (err) {
-    console.error('Error fetching user documents:', err);
-    throw new Error('Error fetching user documents');
+    console.error("Error fetching user documents:", err);
+    throw new Error("Error fetching user documents");
   }
 };
 
@@ -482,36 +475,40 @@ const updateUser = async (userId, fields) => {
   if (updates.length === 0) return;
 
   values.push(userId);
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING id, email, phone, status, role`;
+  const query = `UPDATE users SET ${updates.join(", ")} WHERE id = $${
+    values.length
+  } RETURNING id, email, phone, status, role`;
 
   try {
     const result = await pool.query(query, values);
     return result.rows[0];
   } catch (err) {
-    console.error('Error updating user:', err);
-    throw new Error('Error updating user');
+    console.error("Error updating user:", err);
+    throw new Error("Error updating user");
   }
 };
 
 const updateUserLanguage = async (userId, languageId) => {
   try {
-    const lang = await pool.query(`SELECT id FROM languages WHERE id = $1`, [languageId]);
-    if (lang.rowCount === 0) throw new Error('Invalid language_id');
+    const lang = await pool.query(`SELECT id FROM languages WHERE id = $1`, [
+      languageId,
+    ]);
+    if (lang.rowCount === 0) throw new Error("Invalid language_id");
 
-    await pool.query(
-      `UPDATE users SET language_id = $1 WHERE id = $2`,
-      [languageId, userId]
-    );
+    await pool.query(`UPDATE users SET language_id = $1 WHERE id = $2`, [
+      languageId,
+      userId,
+    ]);
   } catch (err) {
-    console.error('Error in updateUserLanguage:', err);
-    throw new Error('Error updating user language');
+    console.error("Error in updateUserLanguage:", err);
+    throw new Error("Error updating user language");
   }
 };
 
 const addUserTerms = async (userId, termIds) => {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     for (const termId of termIds) {
       const term = await client.query(
         `SELECT taxonomy_id FROM terms WHERE id = $1`,
@@ -528,11 +525,11 @@ const addUserTerms = async (userId, termIds) => {
         [termId, taxonomy_id, userId]
       );
     }
-    await client.query('COMMIT');
+    await client.query("COMMIT");
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error in addUserTerms:', err);
-    throw new Error('Error adding terms');
+    await client.query("ROLLBACK");
+    console.error("Error in addUserTerms:", err);
+    throw new Error("Error adding terms");
   } finally {
     client.release();
   }
@@ -546,8 +543,8 @@ const removeUserTerms = async (userId, termIds) => {
       [userId, termIds]
     );
   } catch (err) {
-    console.error('Error in removeUserTerms:', err);
-    throw new Error('Error removing terms');
+    console.error("Error in removeUserTerms:", err);
+    throw new Error("Error removing terms");
   }
 };
 
@@ -557,10 +554,10 @@ const deleteUser = async (userId) => {
       `DELETE FROM users WHERE id = $1 RETURNING id, email, phone`,
       [userId]
     );
-    return result.rows[0]; 
+    return result.rows[0];
   } catch (err) {
-    console.error('Error deleting user:', err);
-    throw new Error('Error deleting user');
+    console.error("Error deleting user:", err);
+    throw new Error("Error deleting user");
   }
 };
 const getUsersByTermIds = async (termIds = [], roles = null) => {
@@ -618,7 +615,7 @@ const getUsersByTermIds = async (termIds = [], roles = null) => {
     terms: u.terms || [],
     metadata: u.metadata || {},
   }));
-  const userIds = users.map(u => u.id);
+  const userIds = users.map((u) => u.id);
 
   const taxoQuery = `
     SELECT tr.type_id AS user_id,
@@ -658,7 +655,7 @@ const getUsersByTermIds = async (termIds = [], roles = null) => {
   return users.map((user) => ({
     ...user,
     taxonomies: taxoMap[user.id]
-      ? Object.values(taxoMap[user.id]).map(tx => ({
+      ? Object.values(taxoMap[user.id]).map((tx) => ({
           ...tx,
           terms: buildHierarchy(tx.terms),
         }))
@@ -666,14 +663,13 @@ const getUsersByTermIds = async (termIds = [], roles = null) => {
   }));
 };
 
-
 const buildHierarchy = (terms) => {
   const map = {};
   const roots = [];
 
-  terms.forEach(t => (map[t.id] = { ...t, children: [] }));
+  terms.forEach((t) => (map[t.id] = { ...t, children: [] }));
 
-  terms.forEach(t => {
+  terms.forEach((t) => {
     if (t.parent_id && map[t.parent_id]) {
       map[t.parent_id].children.push(map[t.id]);
     } else {
@@ -685,7 +681,8 @@ const buildHierarchy = (terms) => {
 };
 
 const getUserTaxonomies = async (userId) => {
-  const { rows } = await pool.query(`
+  const { rows } = await pool.query(
+    `
     SELECT 
       tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
       t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
@@ -694,7 +691,9 @@ const getUserTaxonomies = async (userId) => {
     JOIN taxonomy tx ON tr.taxonomy_id = tx.id
     WHERE tr.type = 'user' AND tr.type_id = $1
     ORDER BY tx.id, t.parent_id NULLS FIRST, t.id;
-  `, [userId]);
+  `,
+    [userId]
+  );
 
   if (!rows.length) return [];
 
@@ -716,13 +715,14 @@ const getUserTaxonomies = async (userId) => {
     });
   }
 
-  return Object.values(taxonomies).map(tx => ({
+  return Object.values(taxonomies).map((tx) => ({
     ...tx,
     terms: buildHierarchy(tx.terms),
   }));
 };
 const searchUsers = async (keyword, page = 1, limit = 10) => {
-  if (!keyword || typeof keyword !== 'string') return { users: [], page: 1, limit: 10, total: 0 };
+  if (!keyword || typeof keyword !== "string")
+    return { users: [], page: 1, limit: 10, total: 0 };
 
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, parseInt(limit, 10) || 10);
@@ -769,7 +769,7 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
       return { users: [], page: safePage, limit: safeLimit, total };
     }
 
-    const userIds = users.map(u => u.id);
+    const userIds = users.map((u) => u.id);
 
     const metaRes = await pool.query(
       `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
@@ -781,7 +781,8 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
       metadataMap[user_id][key] = value;
     });
 
-    const taxoRes = await pool.query(`
+    const taxoRes = await pool.query(
+      `
       SELECT tr.type_id AS user_id,
              tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
              t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
@@ -790,7 +791,9 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
       JOIN taxonomy tx ON tr.taxonomy_id = tx.id
       WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
       ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
-    `, [userIds]);
+    `,
+      [userIds]
+    );
 
     const taxoMap = {};
     for (const row of taxoRes.rows) {
@@ -814,8 +817,8 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
     const buildHierarchyLocal = (terms) => {
       const map = {};
       const roots = [];
-      terms.forEach(t => (map[t.id] = { ...t, children: [] }));
-      terms.forEach(t => {
+      terms.forEach((t) => (map[t.id] = { ...t, children: [] }));
+      terms.forEach((t) => {
         if (t.parent_id && map[t.parent_id]) {
           map[t.parent_id].children.push(map[t.id]);
         } else {
@@ -829,7 +832,7 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
       ...user,
       metadata: metadataMap[user.id] || {},
       taxonomies: taxoMap[user.id]
-        ? Object.values(taxoMap[user.id]).map(tx => ({
+        ? Object.values(taxoMap[user.id]).map((tx) => ({
             ...tx,
             terms: buildHierarchyLocal(tx.terms),
           }))
@@ -838,10 +841,379 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
 
     return { users: finalUsers, page: safePage, limit: safeLimit, total };
   } catch (err) {
-    console.error('Error in searchUsers (final):', err);
-    throw new Error('Error searching users');
+    console.error("Error in searchUsers (final):", err);
+    throw new Error("Error searching users");
   }
 };
+
+// PUBLIC META KEYS WHITELIST (developer-editable)
+// ✅ Only these metadata keys will be:
+// - returned in response
+// - used in keyword search
+// - allowed in metaFilters
+const PUBLIC_META_KEYS = new Set([
+  "name",
+  "display_name",
+  "bio",
+  "about",
+  "gender",
+  "city",
+  "state",
+  "country",
+  "profile_pic_url",
+  "experience",
+  "languages",
+  // add more safe keys here...
+]);
+
+const findUsersPublic = async ({
+  keyword,
+  page = 1,
+  limit = 10,
+  user_types = [],
+  taxonomyFilters = [],
+  taxonomyRelation = "AND",
+  metaFilters = [],
+  metaRelation = "AND",
+} = {}) => {
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimitRaw = Math.max(1, parseInt(limit, 10) || 10);
+  const safeLimit = Math.min(safeLimitRaw, 50); // hard cap for public endpoint
+  const offset = (safePage - 1) * safeLimit;
+
+  // Public visibility rules
+  const allowedStatuses = ["registered", "verified"];
+
+  // roles: allow all except admin (and enforce even if caller sends it)
+  const roleList = Array.isArray(user_types) ? user_types : [];
+  const rolesFiltered = roleList
+    .map((r) =>
+      String(r || "")
+        .toLowerCase()
+        .trim()
+    )
+    .filter(Boolean)
+    .filter((r) => r !== "admin");
+
+  // Keyword search: do NOT include email/phone; do include:
+  // - role/status
+  // - PUBLIC meta values
+  // - term title/slug
+  const hasKeyword = typeof keyword === "string" && keyword.trim() !== "";
+  const ilike = hasKeyword ? `%${keyword.trim()}%` : null;
+
+  // Build dynamic SQL
+  const whereParts = [];
+  const values = [];
+  let i = 1;
+
+  // Status filter (public)
+  whereParts.push(`u.status = ANY($${i}::user_status[])`);
+  values.push(allowedStatuses);
+  i++;
+
+  // Role filter (public) — optional
+  // If user_types provided, apply it; always exclude admin
+  whereParts.push(`(u.role IS NULL OR LOWER(u.role) <> 'admin')`);
+  if (rolesFiltered.length) {
+    whereParts.push(`LOWER(u.role) = ANY($${i}::text[])`);
+    values.push(rolesFiltered);
+    i++;
+  }
+
+  // Taxonomy filters (structure B)
+  // taxonomyFilters: [{taxonomy_id, term_ids:[...]}]
+  // relation: AND/OR
+  if (Array.isArray(taxonomyFilters) && taxonomyFilters.length) {
+    const cleaned = taxonomyFilters
+      .map((f) => ({
+        taxonomy_id: parseInt(f.taxonomy_id, 10),
+        term_ids: Array.isArray(f.term_ids)
+          ? f.term_ids.map((x) => parseInt(x, 10)).filter(Number.isFinite)
+          : [],
+      }))
+      .filter((f) => Number.isFinite(f.taxonomy_id) && f.term_ids.length);
+
+    if (cleaned.length) {
+      const rel =
+        String(taxonomyRelation || "AND").toUpperCase() === "OR" ? "OR" : "AND";
+
+      if (rel === "AND") {
+        // must satisfy each group
+        for (const g of cleaned) {
+          whereParts.push(`
+            EXISTS (
+              SELECT 1
+              FROM taxonomy_relationships trf
+              WHERE trf.type = 'user'
+                AND trf.type_id = u.id
+                AND trf.taxonomy_id = $${i}
+                AND trf.term_id = ANY($${i + 1}::int[])
+            )
+          `);
+          values.push(g.taxonomy_id, g.term_ids);
+          i += 2;
+        }
+      } else {
+        // OR across groups
+        const orBlocks = [];
+        for (const g of cleaned) {
+          orBlocks.push(`
+            EXISTS (
+              SELECT 1
+              FROM taxonomy_relationships trf
+              WHERE trf.type = 'user'
+                AND trf.type_id = u.id
+                AND trf.taxonomy_id = $${i}
+                AND trf.term_id = ANY($${i + 1}::int[])
+            )
+          `);
+          values.push(g.taxonomy_id, g.term_ids);
+          i += 2;
+        }
+        whereParts.push(`(${orBlocks.join(" OR ")})`);
+      }
+    }
+  }
+
+  // Metadata filters (like taxonomies, but on user_metadata)
+  // metaFilters: [{key, op, value}]
+  // metaRelation: AND/OR
+  if (Array.isArray(metaFilters) && metaFilters.length) {
+    const cleaned = metaFilters
+      .map((f) => ({
+        key: String(f.key || "").trim(),
+        op: String(f.op || "eq").toLowerCase(),
+        value: f.value,
+      }))
+      .filter((f) => f.key && PUBLIC_META_KEYS.has(f.key)); // ✅ only allow whitelisted keys
+
+    if (cleaned.length) {
+      const rel =
+        String(metaRelation || "AND").toUpperCase() === "OR" ? "OR" : "AND";
+      const blocks = [];
+
+      for (const f of cleaned) {
+        if (f.op === "exists") {
+          blocks.push(`
+            EXISTS (
+              SELECT 1 FROM user_metadata umf
+              WHERE umf.user_id = u.id AND umf.key = $${i}
+            )
+          `);
+          values.push(f.key);
+          i += 1;
+          continue;
+        }
+
+        if (f.op === "in") {
+          const arr = Array.isArray(f.value)
+            ? f.value.map((v) => String(v))
+            : [];
+          if (!arr.length) continue;
+
+          blocks.push(`
+            EXISTS (
+              SELECT 1 FROM user_metadata umf
+              WHERE umf.user_id = u.id
+                AND umf.key = $${i}
+                AND umf.value = ANY($${i + 1}::text[])
+            )
+          `);
+          values.push(f.key, arr);
+          i += 2;
+          continue;
+        }
+
+        if (f.op === "ilike") {
+          const v = `%${String(f.value ?? "").trim()}%`;
+          if (v === "%%") continue;
+
+          blocks.push(`
+            EXISTS (
+              SELECT 1 FROM user_metadata umf
+              WHERE umf.user_id = u.id
+                AND umf.key = $${i}
+                AND umf.value ILIKE $${i + 1}
+            )
+          `);
+          values.push(f.key, v);
+          i += 2;
+          continue;
+        }
+
+        // default: eq
+        const v = String(f.value ?? "");
+        blocks.push(`
+          EXISTS (
+            SELECT 1 FROM user_metadata umf
+            WHERE umf.user_id = u.id
+              AND umf.key = $${i}
+              AND umf.value = $${i + 1}
+          )
+        `);
+        values.push(f.key, v);
+        i += 2;
+      }
+
+      if (blocks.length) {
+        whereParts.push(`(${blocks.join(` ${rel} `)})`);
+      }
+    }
+  }
+
+  // Keyword block (optional)
+  if (hasKeyword) {
+    // Search in public meta values only (whitelisted keys), role/status, and term title/slug
+    const publicMetaKeysArr = Array.from(PUBLIC_META_KEYS);
+
+    whereParts.push(`
+      (
+        u.role::text ILIKE $${i}
+        OR u.status::text ILIKE $${i}
+        OR EXISTS (
+          SELECT 1 FROM user_metadata umk
+          WHERE umk.user_id = u.id
+            AND umk.key = ANY($${i + 1}::text[])
+            AND umk.value ILIKE $${i}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM taxonomy_relationships trk
+          JOIN terms tk ON tk.id = trk.term_id
+          WHERE trk.type = 'user' AND trk.type_id = u.id
+            AND (tk.title ILIKE $${i} OR tk.slug ILIKE $${i})
+        )
+      )
+    `);
+
+    values.push(ilike, publicMetaKeysArr);
+    i += 2;
+  }
+
+  const whereClause = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const countQuery = `
+    SELECT COUNT(DISTINCT u.id) AS total
+    FROM users u
+    ${whereClause};
+  `;
+
+  const usersQuery = `
+    SELECT DISTINCT
+      u.id,
+      u.role,
+      u.status,
+      u.created_at,
+      u.language_id,
+      u.location_id
+    FROM users u
+    ${whereClause}
+    ORDER BY u.created_at DESC
+    LIMIT $${i} OFFSET $${i + 1};
+  `;
+
+  try {
+    const countRes = await pool.query(countQuery, values);
+    const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    const listRes = await pool.query(usersQuery, [
+      ...values,
+      safeLimit,
+      offset,
+    ]);
+    const users = listRes.rows || [];
+    if (!users.length)
+      return { users: [], page: safePage, limit: safeLimit, total };
+
+    const userIds = users.map((u) => u.id);
+
+    // Fetch metadata (ONLY whitelisted keys)
+    const metaKeysArr = Array.from(PUBLIC_META_KEYS);
+    const metaRes = await pool.query(
+      `SELECT user_id, key, value
+       FROM user_metadata
+       WHERE user_id = ANY($1::int[])
+         AND key = ANY($2::text[])`,
+      [userIds, metaKeysArr]
+    );
+
+    const metadataMap = {};
+    for (const { user_id, key, value } of metaRes.rows) {
+      if (!metadataMap[user_id]) metadataMap[user_id] = {};
+      metadataMap[user_id][key] = value;
+    }
+
+    // Fetch taxonomies + terms
+    const taxoRes = await pool.query(
+      `
+      SELECT tr.type_id AS user_id,
+             tx.id AS taxonomy_id, tx.slug AS taxonomy_slug, tx.title AS taxonomy_title,
+             t.id AS term_id, t.slug AS term_slug, t.title AS term_title, t.parent_id
+      FROM taxonomy_relationships tr
+      JOIN terms t ON tr.term_id = t.id
+      JOIN taxonomy tx ON tr.taxonomy_id = tx.id
+      WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
+      ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
+    `,
+      [userIds]
+    );
+
+    const taxoMap = {};
+    for (const row of taxoRes.rows) {
+      if (!taxoMap[row.user_id]) taxoMap[row.user_id] = {};
+      const userTax = taxoMap[row.user_id];
+
+      if (!userTax[row.taxonomy_id]) {
+        userTax[row.taxonomy_id] = {
+          id: row.taxonomy_id,
+          slug: row.taxonomy_slug,
+          title: row.taxonomy_title,
+          terms: [],
+        };
+      }
+
+      userTax[row.taxonomy_id].terms.push({
+        id: row.term_id,
+        slug: row.term_slug,
+        title: row.term_title,
+        parent_id: row.parent_id,
+      });
+    }
+
+    // local hierarchy builder
+    const buildHierarchyLocal = (terms) => {
+      const map = {};
+      const roots = [];
+      terms.forEach((t) => (map[t.id] = { ...t, children: [] }));
+      terms.forEach((t) => {
+        if (t.parent_id && map[t.parent_id])
+          map[t.parent_id].children.push(map[t.id]);
+        else roots.push(map[t.id]);
+      });
+      return roots;
+    };
+
+    const finalUsers = users.map((u) => ({
+      ...u,
+      metadata: metadataMap[u.id] || {},
+      taxonomies: taxoMap[u.id]
+        ? Object.values(taxoMap[u.id]).map((tx) => ({
+            ...tx,
+            terms: buildHierarchyLocal(tx.terms),
+          }))
+        : [],
+    }));
+
+    return { users: finalUsers, page: safePage, limit: safeLimit, total };
+  } catch (err) {
+    console.error("Error in findUsersPublic:", err);
+    throw new Error("Error finding users");
+  }
+};
+
 const getUsersByIds = async (ids = []) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
@@ -856,7 +1228,7 @@ const getUsersByIds = async (ids = []) => {
     const users = usersRes.rows;
     if (users.length === 0) return [];
 
-    const userIds = users.map(u => u.id);
+    const userIds = users.map((u) => u.id);
 
     const metaRes = await pool.query(
       `SELECT user_id, key, value 
@@ -907,11 +1279,11 @@ const getUsersByIds = async (ids = []) => {
       });
     }
 
-    return users.map(user => ({
+    return users.map((user) => ({
       ...user,
       metadata: metadataMap[user.id] || {},
       taxonomies: taxoMap[user.id]
-        ? Object.values(taxoMap[user.id]).map(tx => ({
+        ? Object.values(taxoMap[user.id]).map((tx) => ({
             ...tx,
             terms: buildHierarchy(tx.terms),
           }))
@@ -922,7 +1294,6 @@ const getUsersByIds = async (ids = []) => {
     throw new Error("Error fetching multiple users by ID");
   }
 };
-
 
 module.exports = {
   normalizePhone,
@@ -953,5 +1324,6 @@ module.exports = {
   buildHierarchy,
   getUserTaxonomies,
   searchUsers,
-  getUsersByIds   
+  getUsersByIds,
+  findUsersPublic,
 };
