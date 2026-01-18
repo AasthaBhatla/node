@@ -12,7 +12,7 @@ const getUserByEmailOrPhone = async (email, phone) => {
   try {
     const result = await pool.query(
       `SELECT * FROM users WHERE email = $1 OR phone = $2`,
-      [email || null, phone || null]
+      [email || null, phone || null],
     );
     return result.rows[0];
   } catch (err) {
@@ -24,7 +24,7 @@ const insertUser = async (email, phone) => {
   try {
     const result = await pool.query(
       `INSERT INTO users (email, phone, status) VALUES ($1, $2, 'new') RETURNING *`,
-      [email || null, phone || null]
+      [email || null, phone || null],
     );
     return result.rows[0];
   } catch (err) {
@@ -80,7 +80,7 @@ const updateUserMetadata = async (userId, metadata) => {
         `INSERT INTO user_metadata (user_id, key, value)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
-        [userId, key, value]
+        [userId, key, value],
       );
     }
   } catch (err) {
@@ -93,7 +93,7 @@ const getUserMetadata = async (userId) => {
   try {
     const result = await pool.query(
       `SELECT key, value FROM user_metadata WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
     const metadata = {};
     result.rows.forEach(({ key, value }) => {
@@ -123,7 +123,7 @@ const getUserById = async (userId) => {
       `SELECT id, email, phone, status, role, created_at 
        FROM users 
        WHERE id = $1`,
-      [userId]
+      [userId],
     );
 
     if (userRes.rows.length === 0) return null;
@@ -134,7 +134,7 @@ const getUserById = async (userId) => {
       `SELECT key, value 
        FROM user_metadata 
        WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
 
     const metadata = {};
@@ -240,7 +240,7 @@ const getUsers = async (filters = {}) => {
 
   const metaResult = await pool.query(
     `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
-    [userIds]
+    [userIds],
   );
 
   const metadataMap = {};
@@ -260,7 +260,7 @@ const getUsers = async (filters = {}) => {
     WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
     ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
   `,
-    [userIds]
+    [userIds],
   );
 
   const taxoMap = {};
@@ -303,7 +303,7 @@ const saveDeviceToken = async (userId, deviceToken) => {
       `INSERT INTO user_devices (user_id, device_token)
        VALUES ($1, $2)
        ON CONFLICT (user_id, device_token) DO NOTHING`,
-      [userId, deviceToken]
+      [userId, deviceToken],
     );
   } catch (err) {
     throw new Error("Error saving device token");
@@ -314,7 +314,7 @@ const removeDeviceToken = async (userId, deviceToken) => {
   try {
     const result = await pool.query(
       `DELETE FROM user_devices WHERE user_id = $1 AND device_token = $2`,
-      [userId, deviceToken]
+      [userId, deviceToken],
     );
     return result.rowCount;
   } catch (error) {
@@ -327,7 +327,7 @@ const getUserProfileById = async (userId, withMetadata = true) => {
   try {
     const userRes = await pool.query(
       `SELECT id, email, phone, status, role, created_at FROM users WHERE id = $1`,
-      [userId]
+      [userId],
     );
 
     if (userRes.rows.length === 0) return null;
@@ -338,7 +338,7 @@ const getUserProfileById = async (userId, withMetadata = true) => {
 
     const metaRes = await pool.query(
       `SELECT key, value FROM user_metadata WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
 
     const metadata = {};
@@ -359,7 +359,7 @@ const updateProfilePicUrl = async (userId, imageUrl) => {
      VALUES ($1, 'profile_pic_url', $2)
      ON CONFLICT (user_id, key)
      DO UPDATE SET value = EXCLUDED.value`,
-    [userId, imageUrl]
+    [userId, imageUrl],
   );
 };
 
@@ -367,7 +367,7 @@ const addDocumentToMetadata = async (userId, newDoc) => {
   try {
     const res = await pool.query(
       `SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'`,
-      [userId]
+      [userId],
     );
 
     let docs = [];
@@ -388,7 +388,7 @@ const addDocumentToMetadata = async (userId, newDoc) => {
       `INSERT INTO user_metadata (user_id, key, value)
        VALUES ($1, 'documents', $2)
        ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [userId, JSON.stringify(docs)]
+      [userId, JSON.stringify(docs)],
     );
   } catch (err) {
     console.error("Error in addDocumentToMetadata:", err);
@@ -417,12 +417,12 @@ const removeDocumentFromMetadata = async (userId, documentName) => {
       )::text  -- cast back to text if your value column is text
       WHERE user_id = $1 AND key = 'documents'
       RETURNING *;`,
-      [userId, documentName]
+      [userId, documentName],
     );
 
     if (result.rowCount === 0) {
       throw new Error(
-        "Document not found or user does not have documents metadata."
+        "Document not found or user does not have documents metadata.",
       );
     }
 
@@ -437,7 +437,7 @@ const getUserDocuments = async (userId) => {
   try {
     const result = await pool.query(
       "SELECT value FROM user_metadata WHERE user_id = $1 AND key = 'documents'",
-      [userId]
+      [userId],
     );
     if (result.rows.length === 0) return [];
     return JSON.parse(result.rows[0].value);
@@ -512,7 +512,7 @@ const addUserTerms = async (userId, termIds) => {
     for (const termId of termIds) {
       const term = await client.query(
         `SELECT taxonomy_id FROM terms WHERE id = $1`,
-        [termId]
+        [termId],
       );
       if (term.rowCount === 0) continue;
 
@@ -522,7 +522,7 @@ const addUserTerms = async (userId, termIds) => {
         `INSERT INTO taxonomy_relationships (term_id, taxonomy_id, type, type_id)
          VALUES ($1, $2, 'user', $3)
          ON CONFLICT DO NOTHING`,
-        [termId, taxonomy_id, userId]
+        [termId, taxonomy_id, userId],
       );
     }
     await client.query("COMMIT");
@@ -540,7 +540,7 @@ const removeUserTerms = async (userId, termIds) => {
     await pool.query(
       `DELETE FROM taxonomy_relationships
        WHERE type = 'user' AND type_id = $1 AND term_id = ANY($2)`,
-      [userId, termIds]
+      [userId, termIds],
     );
   } catch (err) {
     console.error("Error in removeUserTerms:", err);
@@ -552,7 +552,7 @@ const deleteUser = async (userId) => {
   try {
     const result = await pool.query(
       `DELETE FROM users WHERE id = $1 RETURNING id, email, phone`,
-      [userId]
+      [userId],
     );
     return result.rows[0];
   } catch (err) {
@@ -692,7 +692,7 @@ const getUserTaxonomies = async (userId) => {
     WHERE tr.type = 'user' AND tr.type_id = $1
     ORDER BY tx.id, t.parent_id NULLS FIRST, t.id;
   `,
-    [userId]
+    [userId],
   );
 
   if (!rows.length) return [];
@@ -773,7 +773,7 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
 
     const metaRes = await pool.query(
       `SELECT user_id, key, value FROM user_metadata WHERE user_id = ANY($1::int[])`,
-      [userIds]
+      [userIds],
     );
     const metadataMap = {};
     metaRes.rows.forEach(({ user_id, key, value }) => {
@@ -792,7 +792,7 @@ const searchUsers = async (keyword, page = 1, limit = 10) => {
       WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
       ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
     `,
-      [userIds]
+      [userIds],
     );
 
     const taxoMap = {};
@@ -863,6 +863,22 @@ const PUBLIC_META_KEYS = new Set([
   "profile_pic_url",
   "experience",
   "languages",
+  "first_name",
+  "last_name",
+  "dob",
+  "gender",
+  "call_charge",
+  "free_calls",
+  "experience",
+  "rating",
+  "cover_image_url",
+  "is_online",
+  "available_time",
+  "available_days",
+  "bookmark_user_ids",
+  "free_messages",
+  "message_charge",
+  "bio",
   // add more safe keys here...
 ]);
 
@@ -890,7 +906,7 @@ const findUsersPublic = async ({
     .map((r) =>
       String(r || "")
         .toLowerCase()
-        .trim()
+        .trim(),
     )
     .filter(Boolean)
     .filter((r) => r !== "admin");
@@ -1137,7 +1153,7 @@ const findUsersPublic = async ({
        FROM user_metadata
        WHERE user_id = ANY($1::int[])
          AND key = ANY($2::text[])`,
-      [userIds, metaKeysArr]
+      [userIds, metaKeysArr],
     );
 
     const metadataMap = {};
@@ -1158,7 +1174,7 @@ const findUsersPublic = async ({
       WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
       ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
     `,
-      [userIds]
+      [userIds],
     );
 
     const taxoMap = {};
@@ -1222,7 +1238,7 @@ const getUsersByIds = async (ids = []) => {
       `SELECT id, email, phone, role, status, created_at 
        FROM users 
        WHERE id = ANY($1::int[])`,
-      [ids]
+      [ids],
     );
 
     const users = usersRes.rows;
@@ -1234,7 +1250,7 @@ const getUsersByIds = async (ids = []) => {
       `SELECT user_id, key, value 
        FROM user_metadata 
        WHERE user_id = ANY($1::int[])`,
-      [userIds]
+      [userIds],
     );
 
     const metadataMap = {};
@@ -1254,7 +1270,7 @@ const getUsersByIds = async (ids = []) => {
       WHERE tr.type = 'user' AND tr.type_id = ANY($1::int[])
       ORDER BY tr.type_id, tx.id, t.parent_id NULLS FIRST, t.id;
       `,
-      [userIds]
+      [userIds],
     );
 
     const taxoMap = {};
