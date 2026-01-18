@@ -20,6 +20,7 @@ if (!REGION || !BUCKET) {
 const s3 = new S3Client({ region: REGION });
 
 /** Map allowed mime types to file extension */
+/** Map allowed mime types to file extension */
 const EXT_MAP = {
   // Images
   "image/jpeg": "jpg",
@@ -32,13 +33,24 @@ const EXT_MAP = {
   "application/msword": "doc",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
     "docx",
-  "application/vnd.ms-powerpoint": "ppt",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-    "pptx",
-  "application/vnd.ms-excel": "xls",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
   "text/plain": "txt",
-  "application/zip": "zip",
+
+  // Audio
+  "audio/mpeg": "mp3", // most common for mp3 uploads
+  "audio/mp3": "mp3", // non-standard, but allow if some client sends it
+  "audio/mp4": "m4a", // often used for .m4a
+  "audio/x-m4a": "m4a",
+  "audio/x-m4p": "m4p",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/opus": "opus",
+  "audio/webm": "webm",
+  "audio/aac": "aac",
+  "audio/flac": "flac",
+  "audio/x-ms-wma": "wma",
+  "audio/x-aiff": "aiff",
+  "audio/3gpp": "3gp",
 };
 
 const ALLOWED_MIME = Object.keys(EXT_MAP);
@@ -58,7 +70,7 @@ function publicUrlForKey(key) {
   }
   return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key.replace(
     /^\/+/,
-    ""
+    "",
   )}`;
 }
 
