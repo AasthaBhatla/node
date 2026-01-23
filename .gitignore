@@ -1,2 +1,9 @@
+.gitignore
 node_modules/
 .env
+docker-compose.yml
+Dockerfile
+.gitignore
+docker-compose.dev.yml
+Dockerfile.dev
+package-lock.json
