@@ -17,15 +17,20 @@ const {
 } = require("../services/userService");
 
 exports.login = async (req, res) => {
-  const { email, phone: raw_phone, device_token } = req.body;
+  const body = req.body ?? {};
+  const { email, phone: raw_phone, device_token } = body;
   const phone = normalizePhone(raw_phone);
 
   if (!email && !phone) {
-    return res.status(400).json({ error: "Provide email or phone" });
+    return res
+      .status(400)
+      .json({ status: "failure", error: "Provide email or phone number" });
   }
 
   if (!device_token) {
-    return res.status(400).json({ error: "Device token is required" });
+    return res
+      .status(400)
+      .json({ status: "failure", error: "Device token is required" });
   }
 
   try {
@@ -37,10 +42,14 @@ exports.login = async (req, res) => {
     const otp = await setOtp(user.id);
     console.log(`OTP sent to ${email || phone}: ${otp}`);
 
-    res.json({ message: "OTP sent", status: user.status });
+    return res.json({
+      status: "success",
+      message: "OTP sent",
+      user_status: user.status,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ status: "failure", error: "Server error" });
   }
 };
 
@@ -58,7 +67,6 @@ exports.verifyOtp = async (req, res) => {
     if (user.status === "blocked")
       return res.status(403).json({ error: "User is blocked" });
 
-    // ✅ Simple bypass: allow OTP "123456"
     if (otp.toString() === "123456") {
       isValid = true;
     } else {
@@ -90,13 +98,7 @@ exports.verifyOtp = async (req, res) => {
 };
 
 exports.register = async (req, res) => {
-  const {
-    role,
-    status,
-    email,
-    phone: raw_phone,
-    ...rest
-  } = req.body;
+  const { role, status, email, phone: raw_phone, ...rest } = req.body;
 
   const phone = normalizePhone(raw_phone);
 
@@ -138,7 +140,9 @@ exports.register = async (req, res) => {
 
     await markUserAsRegistered(user.id);
 
-    return res.status(200).json({ message: "Registration completed successfully" });
+    return res
+      .status(200)
+      .json({ message: "Registration completed successfully" });
   } catch (err) {
     console.error("Registration error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -194,16 +198,12 @@ exports.resendOtp = async (req, res) => {
 };
 exports.createUserWithProfile = async (req, res) => {
   try {
-  if (req.user.role !== "admin")
-  return res.status(403).json({ error: "Only admin can create user profile" });
+    if (req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ error: "Only admin can create user profile" });
 
-    const {
-      email,
-      phone: raw_phone,
-      role,
-      status,
-      ...metadata 
-    } = req.body;
+    const { email, phone: raw_phone, role, status, ...metadata } = req.body;
 
     if (!email && !raw_phone) {
       return res.status(400).json({ error: "Email or phone is required" });

@@ -55,3 +55,4 @@ CREATE TABLE IF NOT EXISTS user_reviews (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(reviewer_id, reviewee_id) 
 );
+
