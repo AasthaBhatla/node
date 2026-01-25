@@ -7,7 +7,7 @@ const redis = new Redis(process.env.REDIS_URL || "redis://redis:6379");
 
 exports.loginIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 2000, // per IP
+  limit: 20000, // per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: "failure", error: "Too many requests. Try later." },
@@ -19,7 +19,7 @@ exports.loginIpLimiter = rateLimit({
 
 exports.loginIdLimiter = rateLimit({
   windowMs: 2 * 60 * 1000,
-  limit: 10, // per identifier
+  limit: 1000, // per identifier
   keyGenerator: (req) => {
     const b = req.body ?? {};
     const id = (b.email || b.phone || "unknown")
