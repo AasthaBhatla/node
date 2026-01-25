@@ -4,7 +4,7 @@ const authController = require("../controllers/authController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const { loginIpLimiter, loginIdLimiter } = require("../middlewares/rateLimit");
 
-router.post("/login", loginIpLimiter, loginIdLimiter, authController.login);
+router.post("/login", authController.login);
 router.post("/verify-otp", authController.verifyOtp);
 router.post("/register", authMiddleware, authController.register);
 router.post("/logout", authMiddleware, authController.logout);
