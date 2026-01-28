@@ -29,13 +29,6 @@ CREATE TABLE IF NOT EXISTS user_metadata (
   UNIQUE(user_id, key)
 );
 
-CREATE TABLE IF NOT EXISTS user_devices (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  device_token TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(user_id, device_token)
-);
 ALTER TABLE users 
   ADD COLUMN IF NOT EXISTS language_id INT REFERENCES languages(id);
 
@@ -56,3 +49,24 @@ CREATE TABLE IF NOT EXISTS user_reviews (
   UNIQUE(reviewer_id, reviewee_id) 
 );
 
+CREATE TABLE IF NOT EXISTS user_devices (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  device_token TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, device_token)
+);
+
+ALTER TABLE user_devices
+  ADD COLUMN IF NOT EXISTS platform VARCHAR(20), -- 'android' | 'ios' | 'web'
+  ADD COLUMN IF NOT EXISTS device_id TEXT,       -- optional: stable device identifier
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+-- Make token unique globally (recommended)
+ALTER TABLE user_devices
+  DROP CONSTRAINT IF EXISTS user_devices_user_id_device_token_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_devices_token_unique ON user_devices(device_token);
+
+-- Optional: index for faster lookups
+CREATE INDEX IF NOT EXISTS user_devices_user_id_idx ON user_devices(user_id);

@@ -472,3 +472,43 @@ exports.findUsersPublic = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+exports.registerDeviceToken = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { device_token } = req.body;
+
+    if (!device_token || typeof device_token !== "string") {
+      return res.status(400).json({ error: "device_token is required" });
+    }
+
+    await require("../services/userService").saveDeviceToken(
+      userId,
+      device_token.trim(),
+    );
+    return res.status(200).json({ message: "Device token saved" });
+  } catch (err) {
+    console.error("registerDeviceToken error:", err);
+    return res.status(500).json({ error: "Failed to save device token" });
+  }
+};
+
+exports.unregisterDeviceToken = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { device_token } = req.body;
+
+    if (!device_token || typeof device_token !== "string") {
+      return res.status(400).json({ error: "device_token is required" });
+    }
+
+    const removed = await require("../services/userService").removeDeviceToken(
+      userId,
+      device_token.trim(),
+    );
+    return res.status(200).json({ message: "Device token removed", removed });
+  } catch (err) {
+    console.error("unregisterDeviceToken error:", err);
+    return res.status(500).json({ error: "Failed to remove device token" });
+  }
+};

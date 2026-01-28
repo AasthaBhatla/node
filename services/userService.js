@@ -297,15 +297,25 @@ const getUsers = async (filters = {}) => {
   }));
 };
 
-const saveDeviceToken = async (userId, deviceToken) => {
+const saveDeviceToken = async (
+  userId,
+  deviceToken,
+  platform = null,
+  deviceId = null,
+) => {
   try {
     await pool.query(
-      `INSERT INTO user_devices (user_id, device_token)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id, device_token) DO NOTHING`,
-      [userId, deviceToken],
+      `INSERT INTO user_devices (user_id, device_token, platform, device_id, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (device_token)
+       DO UPDATE SET user_id = EXCLUDED.user_id,
+                     platform = EXCLUDED.platform,
+                     device_id = EXCLUDED.device_id,
+                     updated_at = NOW()`,
+      [userId, deviceToken, platform, deviceId],
     );
   } catch (err) {
+    console.error("Error saving device token:", err);
     throw new Error("Error saving device token");
   }
 };
@@ -1311,6 +1321,25 @@ const getUsersByIds = async (ids = []) => {
   }
 };
 
+const getUserDeviceTokens = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT device_token FROM user_devices WHERE user_id = $1`,
+    [userId],
+  );
+  return rows.map((r) => r.device_token);
+};
+
+const getTokensByUserIds = async (userIds = []) => {
+  if (!Array.isArray(userIds) || userIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `SELECT DISTINCT device_token
+     FROM user_devices
+     WHERE user_id = ANY($1::int[])`,
+    [userIds],
+  );
+  return rows.map((r) => r.device_token);
+};
+
 module.exports = {
   normalizePhone,
   getUserByEmailOrPhone,
@@ -1342,4 +1371,6 @@ module.exports = {
   searchUsers,
   getUsersByIds,
   findUsersPublic,
+  getUserDeviceTokens,
+  getTokensByUserIds,
 };

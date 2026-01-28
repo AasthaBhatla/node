@@ -1,7 +1,5 @@
 #!/bin/bash
 echo "📥 Pulling latest code from Git..."
-git fetch origin
-git reset --hard origin/main
 git pull origin main || { echo "❌ Git pull failed"; exit 1; }
 
 echo "🔁 Rebuilding Docker containers..."

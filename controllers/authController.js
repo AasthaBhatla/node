@@ -18,7 +18,8 @@ const {
 
 exports.login = async (req, res) => {
   const body = req.body ?? {};
-  const { email, phone: raw_phone, device_token } = body;
+  const { email, phone: raw_phone } = body;
+  const device_token = body?.device?.device_token || body?.device_token;
   const phone = normalizePhone(raw_phone);
 
   if (!email && !phone) {
@@ -37,7 +38,7 @@ exports.login = async (req, res) => {
     let user = await getUserByEmailOrPhone(email, phone);
     if (!user) user = await insertUser(email, phone);
 
-    await saveDeviceToken(user.id, device_token);
+    await attachDeviceTokenIfPresent(user.id, req.body);
 
     const otp = await setOtp(user.id);
     console.log(`OTP sent to ${email || phone}: ${otp}`);
@@ -82,7 +83,7 @@ exports.verifyOtp = async (req, res) => {
       process.env.JWT_SECRET || "defaultsecret",
       {
         expiresIn: "180d",
-      }
+      },
     );
 
     res.json({
@@ -90,6 +91,7 @@ exports.verifyOtp = async (req, res) => {
       token,
       user_id: user.id,
       status: user.status,
+      role: user.role,
     });
   } catch (err) {
     console.error(err);
@@ -237,7 +239,7 @@ exports.createUserWithProfile = async (req, res) => {
     const token = jwt.sign(
       { id: user.id },
       process.env.JWT_SECRET || "defaultsecret",
-      { expiresIn: "180d" }
+      { expiresIn: "180d" },
     );
 
     res.status(201).json({
@@ -251,3 +253,24 @@ exports.createUserWithProfile = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+async function attachDeviceTokenIfPresent(userId, body) {
+  const device_token = body?.device?.device_token || body?.device_token;
+  const platform = body?.device?.platform || body?.platform;
+  const device_id = body?.device?.device_id || body?.device_id;
+
+  if (!device_token || typeof device_token !== "string") return;
+
+  const safePlatform =
+    typeof platform === "string" ? platform.toLowerCase().trim() : null;
+
+  const safeDeviceId =
+    typeof device_id === "string" ? device_id.trim().slice(0, 200) : null;
+
+  await saveDeviceToken(
+    userId,
+    device_token.trim(),
+    safePlatform,
+    safeDeviceId,
+  );
+}

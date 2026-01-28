@@ -9,7 +9,7 @@ console.log(
   !!process.env.RAZORPAY_WEBHOOK_SECRET,
 );
 
-app.set("trust proxy", 3);
+// app.set("trust proxy", 3);
 
 const webhookRoutes = require("./routes/webhookRoutes");
 
@@ -44,6 +44,7 @@ const s3Routes = require("./routes/s3Routes");
 const walletRoutes = require("./routes/walletRoutes");
 const workspaceRoutes = require("./routes/workspaceRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
+const adminNotifications = require("./routes/adminNotifications");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -65,6 +66,7 @@ app.use("/relationships", relationshipRoutes);
 app.use("/uploadnow", s3Routes);
 app.use("/wallet", walletRoutes);
 app.use("/workspace", workspaceRoutes);
+app.use("/admin/notifications", adminNotifications);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

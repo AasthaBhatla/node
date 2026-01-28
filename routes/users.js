@@ -21,16 +21,26 @@ router.post(
   "/profile-picture",
   authMiddleware,
   uploadProfile.single("image"),
-  userController.uploadProfilePic
+  userController.uploadProfilePic,
 );
 router.post(
   "/documents",
   authMiddleware,
   uploadDocument.single("document"),
-  userController.uploadDocument
+  userController.uploadDocument,
 );
 router.delete("/document/:id", authMiddleware, userController.deleteDocument);
 router.get("/documents/:id", authMiddleware, userController.listUserDocuments);
 router.delete("/:id", authMiddleware, userController.deleteUser);
+router.post(
+  "/device-token",
+  authMiddleware,
+  userController.registerDeviceToken,
+);
+router.delete(
+  "/device-token",
+  authMiddleware,
+  userController.unregisterDeviceToken,
+);
 
 module.exports = router;
