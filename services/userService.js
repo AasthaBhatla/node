@@ -1340,6 +1340,40 @@ const getTokensByUserIds = async (userIds = []) => {
   return rows.map((r) => r.device_token);
 };
 
+const getUserCardsByIds = async (ids = []) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
+  const usersRes = await pool.query(
+    `SELECT id, role, status, created_at
+     FROM users
+     WHERE id = ANY($1::int[])`,
+    [ids],
+  );
+
+  const users = usersRes.rows || [];
+  if (!users.length) return [];
+
+  const userIds = users.map((u) => u.id);
+
+  const metaRes = await pool.query(
+    `SELECT user_id, key, value
+     FROM user_metadata
+     WHERE user_id = ANY($1::int[])`,
+    [userIds],
+  );
+
+  const metaMap = {};
+  for (const row of metaRes.rows) {
+    if (!metaMap[row.user_id]) metaMap[row.user_id] = {};
+    metaMap[row.user_id][row.key] = row.value;
+  }
+
+  return users.map((u) => ({
+    ...u,
+    metadata: metaMap[u.id] || {},
+  }));
+};
+
 module.exports = {
   normalizePhone,
   getUserByEmailOrPhone,
@@ -1373,4 +1407,5 @@ module.exports = {
   findUsersPublic,
   getUserDeviceTokens,
   getTokensByUserIds,
+  getUserCardsByIds,
 };

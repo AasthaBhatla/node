@@ -1,3 +1,4 @@
+// server.js
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -15,12 +16,14 @@ const webhookRoutes = require("./routes/webhookRoutes");
 
 app.use(cors());
 
+// Razorpay webhooks must receive raw body
 app.use(
   "/webhooks/razorpay",
   express.raw({ type: "application/json" }),
   webhookRoutes,
 );
 
+// Normal JSON parsing for everything else
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -45,6 +48,7 @@ const walletRoutes = require("./routes/walletRoutes");
 const workspaceRoutes = require("./routes/workspaceRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
 const adminNotifications = require("./routes/adminNotifications");
+const jobsRoutes = require("./routes/jobs");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -67,6 +71,7 @@ app.use("/uploadnow", s3Routes);
 app.use("/wallet", walletRoutes);
 app.use("/workspace", workspaceRoutes);
 app.use("/admin/notifications", adminNotifications);
+app.use("/jobs", jobsRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
