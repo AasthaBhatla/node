@@ -395,6 +395,7 @@ async function listClientJobs({
   limit = 20,
   includeApplicants = false,
 }) {
+  // Auth guard
   if (!clientId) {
     const e = new Error("Unauthorized");
     e.statusCode = 401;
@@ -405,8 +406,13 @@ async function listClientJobs({
     page: p,
     limit: l,
     offset,
-  } = safeLimitOffset({ page, limit, max: 100 });
+  } = safeLimitOffset({
+    page,
+    limit,
+    max: 100,
+  });
 
+  // 1) Fetch jobs (with applicant_count for quick UI badges)
   const jobsRes = await pool.query(
     `
     SELECT
@@ -421,17 +427,20 @@ async function listClientJobs({
     WHERE j.client_id = $1
     ORDER BY j.created_at DESC
     LIMIT $2 OFFSET $3
-  `,
+    `,
     [clientId, l, offset],
   );
 
   const jobs = jobsRes.rows || [];
+
+  // If not requested, or no jobs, return early
   if (!includeApplicants || jobs.length === 0) {
     return { page: p, limit: l, jobs };
   }
 
   const jobIds = jobs.map((j) => j.id);
 
+  // 2) Fetch applications for those jobs (exclude withdrawn)
   const appsRes = await pool.query(
     `
     SELECT
@@ -444,33 +453,59 @@ async function listClientJobs({
       a.updated_at
     FROM job_applications a
     WHERE a.job_id = ANY($1::bigint[])
-      AND a.status = 'applied'
+      AND a.status <> 'withdrawn'
     ORDER BY a.created_at DESC
-  `,
+    `,
     [jobIds],
   );
 
   const apps = appsRes.rows || [];
-  const partnerIds = [...new Set(apps.map((a) => a.partner_id))];
-  const partnerCards = await getUserCardsByIds(partnerIds);
-  const partnerMap = new Map(partnerCards.map((u) => [u.id, u]));
 
+  // 3) Fetch partner cards for application partners (if any)
+  const partnerIds = [
+    ...new Set(apps.map((a) => a.partner_id).filter(Boolean)),
+  ];
+
+  let partnerMap = new Map();
+  if (partnerIds.length > 0) {
+    // getUserCardsByIds MUST already exclude sensitive fields (email/phone)
+    // and ideally only return safe "card" info.
+    const partnerCards = await getUserCardsByIds(partnerIds);
+
+    // Optional: if you want to enforce allowed partner roles at this layer,
+    // uncomment below and ensure cards include "role".
+    //
+    // const allowed = new Set(["officers", "lawyers", "ngos", "experts"]);
+    // const filteredCards = (partnerCards || []).filter(
+    //   (u) => allowed.has(String(u.role || "").toLowerCase().trim())
+    // );
+
+    partnerMap = new Map((partnerCards || []).map((u) => [u.id, u]));
+  }
+
+  // 4) Group applications by job_id
   const appsByJob = new Map();
   for (const a of apps) {
-    if (!appsByJob.has(a.job_id)) appsByJob.set(a.job_id, []);
-    appsByJob.get(a.job_id).push({
+    const jobId = a.job_id;
+    if (!appsByJob.has(jobId)) appsByJob.set(jobId, []);
+
+    appsByJob.get(jobId).push({
       partner: partnerMap.get(a.partner_id) || {
         id: a.partner_id,
         metadata: {},
       },
-      quote_credits: parseInt(a.quote_credits, 10),
-      message: a.message,
+      quote_credits:
+        a.quote_credits === null || a.quote_credits === undefined
+          ? null
+          : Number.parseInt(a.quote_credits, 10),
+      message: a.message || "",
       status: a.status,
       created_at: a.created_at,
       updated_at: a.updated_at,
     });
   }
 
+  // 5) Attach applications to jobs
   const finalJobs = jobs.map((j) => ({
     ...j,
     applications: appsByJob.get(j.id) || [],
