@@ -49,6 +49,7 @@ const workspaceRoutes = require("./routes/workspaceRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
 const adminNotifications = require("./routes/adminNotifications");
 const jobsRoutes = require("./routes/jobs");
+const notificationsRoutes = require("./routes/notificationsRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -72,6 +73,7 @@ app.use("/wallet", walletRoutes);
 app.use("/workspace", workspaceRoutes);
 app.use("/admin/notifications", adminNotifications);
 app.use("/jobs", jobsRoutes);
+app.use("/notifications", notificationsRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
