@@ -1,35 +1,40 @@
--- ngo_help_requests.sql
+-- db/schema/ngo_help_requests.sql
+-- Client requests help from an NGO (NOT volunteering)
+-- Run with: psql -d your_db -f db/schema/ngo_help_requests.sql
 
--- ENUMs
+-- -----------------------
+-- 1) Create ENUM types (only if missing)
+-- -----------------------
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ngo_help_request_status') THEN
-    CREATE TYPE ngo_help_request_status AS ENUM (
-      'pending',
-      'accepted',
-      'rejected',
-      'withdrawn'
-    );
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ngo_help_type') THEN
-    CREATE TYPE ngo_help_type AS ENUM (
-      'medical_help',
-      'education_support',
-      'food_ration',
-      'financial_help',
-      'employment_skill_support',
-      'legal_help',
-      'environmental_issue',
-      'women_support',
-      'farmer_support',
-      'other'
-    );
+    EXECUTE 'CREATE TYPE ngo_help_request_status AS ENUM (''pending'', ''accepted'', ''rejected'', ''withdrawn'')';
   END IF;
 END
 $$;
 
--- Table
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ngo_help_type') THEN
+    EXECUTE 'CREATE TYPE ngo_help_type AS ENUM (
+      ''medical_help'',
+      ''education_support'',
+      ''food_ration'',
+      ''financial_help'',
+      ''employment_skill_support'',
+      ''legal_help'',
+      ''environmental_issue'',
+      ''women_support'',
+      ''farmer_support'',
+      ''other''
+    )';
+  END IF;
+END
+$$;
+
+-- -----------------------
+-- 2) Create main table
+-- -----------------------
 CREATE TABLE IF NOT EXISTS ngo_help_requests (
   id SERIAL PRIMARY KEY,
 
@@ -47,11 +52,16 @@ CREATE TABLE IF NOT EXISTS ngo_help_requests (
   age INT NOT NULL CHECK (age >= 0 AND age <= 120),
   dob DATE NOT NULL,
 
+  -- one or more help types (multi-select)
   help_types ngo_help_type[] NOT NULL DEFAULT '{}',
+
+  -- problem description
   problem_text TEXT NOT NULL,
 
+  -- consent
   consent_contact BOOLEAN NOT NULL,
 
+  -- status workflow
   status ngo_help_request_status NOT NULL DEFAULT 'pending',
   ngo_decision_at TIMESTAMP,
   ngo_decision_by INT REFERENCES users(id),
@@ -61,36 +71,37 @@ CREATE TABLE IF NOT EXISTS ngo_help_requests (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Prevent duplicate pending help requests to same NGO (optional but recommended)
+-- -----------------------
+-- 3) Indexes & constraints
+-- -----------------------
+
+-- Prevent duplicate pending help requests to same NGO
+-- Allows re-apply only after rejected/withdrawn/accepted
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_ngo_help_pending
-ON ngo_help_requests(client_user_id, ngo_user_id)
-WHERE status = 'pending';
+  ON ngo_help_requests(client_user_id, ngo_user_id)
+  WHERE status = 'pending';
 
 -- Helpful indexes
 CREATE INDEX IF NOT EXISTS idx_ngo_help_ngo ON ngo_help_requests(ngo_user_id);
 CREATE INDEX IF NOT EXISTS idx_ngo_help_client ON ngo_help_requests(client_user_id);
 CREATE INDEX IF NOT EXISTS idx_ngo_help_status ON ngo_help_requests(status);
 
--- updated_at trigger (reuse your existing set_updated_at() if already created)
-DO $$
+-- -----------------------
+-- 4) Trigger function to keep updated_at fresh
+-- -----------------------
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_proc
-    WHERE proname = 'set_updated_at'
-  ) THEN
-    CREATE OR REPLACE FUNCTION set_updated_at()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      NEW.updated_at = NOW();
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-  END IF;
-END
-$$;
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
+-- -----------------------
+-- 5) Trigger
+-- -----------------------
 DROP TRIGGER IF EXISTS trg_ngo_help_updated_at ON ngo_help_requests;
+
 CREATE TRIGGER trg_ngo_help_updated_at
 BEFORE UPDATE ON ngo_help_requests
 FOR EACH ROW
