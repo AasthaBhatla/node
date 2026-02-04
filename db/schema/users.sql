@@ -37,7 +37,7 @@ SET language_id = (SELECT id FROM languages WHERE slug = 'english')
 WHERE language_id IS NULL;
 
 ALTER TABLE users 
-  ADD COLUMN IF NOT EXISTS location_id INT REFERENCES locations(id); 
+  ADD COLUMN IF NOT EXISTS location_id INT; 
 
 CREATE TABLE IF NOT EXISTS user_reviews (
   id SERIAL PRIMARY KEY,
