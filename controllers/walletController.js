@@ -3,6 +3,7 @@ const {
   getWalletBalance,
   debitWallet,
   getWalletTransactions,
+  getWalletTransactionsEnriched,
 } = require("../services/walletService");
 
 // wallet_reason Option A enum set
@@ -79,18 +80,32 @@ exports.debitMe = async (req, res) => {
 exports.getMyTransactions = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) {
+      return res.status(401).json({
+        status: "failure",
+        body: { message: "Unauthorized" },
+      });
+    }
 
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
     const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
 
-    const tx = await getWalletTransactions({ userId, limit, offset });
-    return res.json(tx);
+    const data = await getWalletTransactionsEnriched({
+      userId,
+      limit,
+      offset,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      body: data,
+    });
   } catch (err) {
     console.error("Error in wallet getMyTransactions:", err);
     const status = err.statusCode || 500;
-    return res
-      .status(status)
-      .json({ error: err.message || "Internal server error" });
+    return res.status(status).json({
+      status: "failure",
+      body: { message: err.message || "Internal server error" },
+    });
   }
 };

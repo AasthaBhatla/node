@@ -1,6 +1,6 @@
 // services/walletService.js
 const pool = require("../db");
-
+const userServices = require("./userService");
 const assertPosInt = (v) => Number.isInteger(v) && v > 0;
 
 const ensureWalletRow = async (client, userId) => {
@@ -319,10 +319,129 @@ const getWalletTransactions = async ({ userId, limit = 50, offset = 0 }) => {
   }
 };
 
+/**
+ * Enriched wallet transactions:
+ * - Adds counterparty user (partner/client) for session-linked rows
+ * - Includes role + ALL metadata keys + taxonomies (via getUsersByIds)
+ */
+async function getWalletTransactionsEnriched({
+  userId,
+  limit = 50,
+  offset = 0,
+}) {
+  const safeLimit =
+    Number.isInteger(limit) && limit > 0 && limit <= 200 ? limit : 50;
+  const safeOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await ensureWalletRow(client, userId);
+
+    // 1) Get ledger rows
+    const r = await client.query(
+      `SELECT
+         id,
+         created_at,
+         direction,
+         amount_credits,
+         reason,
+         reference_kind,
+         reference_id,
+         idempotency_key,
+         metadata
+       FROM wallet_transactions
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, safeLimit, safeOffset],
+    );
+
+    const txs = r.rows || [];
+
+    // inside getWalletTransactionsEnriched(), after you have: const txs = r.rows || [];
+
+    const extractCounterpartyIdFromTx = (tx, myUserId) => {
+      const meta = tx.metadata || {};
+
+      // metadata might come as JSON string sometimes; normalize
+      let m = meta;
+      if (typeof meta === "string") {
+        try {
+          m = JSON.parse(meta);
+        } catch {
+          m = {};
+        }
+      }
+
+      const partnerId = Number(m.partner_id);
+      if (Number.isFinite(partnerId) && partnerId !== Number(myUserId))
+        return partnerId;
+
+      const clientId = Number(m.client_id);
+      if (Number.isFinite(clientId) && clientId !== Number(myUserId))
+        return clientId;
+
+      // optional fallback: parse session:1:m:1:debit => session id = 1
+      const ref = String(tx.reference_id || "");
+      if (ref.startsWith("session:")) {
+        const parts = ref.split(":");
+        const sid = Number(parts[1]);
+        // you can use sid to fetch sessions and derive counterparty,
+        // but only if you really need it.
+      }
+
+      return null;
+    };
+
+    // 1) collect counterparty ids from metadata
+    const txToCounterpartyId = {};
+    const counterpartyIds = [];
+
+    for (const t of txs) {
+      const cpId = extractCounterpartyIdFromTx(t, userId);
+      if (!cpId) continue;
+      txToCounterpartyId[t.id] = cpId;
+      counterpartyIds.push(cpId);
+    }
+
+    const uniqueCounterpartyIds = Array.from(new Set(counterpartyIds));
+
+    // 2) bulk fetch users (role + ALL metadata keys + taxonomies)
+    let counterpartyMap = {};
+    if (uniqueCounterpartyIds.length) {
+      const users = await userServices.getUsersByIds(uniqueCounterpartyIds);
+      counterpartyMap = {};
+      for (const u of users || []) counterpartyMap[u.id] = u;
+    }
+
+    // 3) attach
+    const enriched = txs.map((t) => {
+      const cpId = txToCounterpartyId[t.id];
+      return {
+        ...t,
+        counterparty: cpId ? counterpartyMap[cpId] || null : null,
+      };
+    });
+
+    await client.query("COMMIT");
+    return { transactions: enriched, limit: safeLimit, offset: safeOffset };
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {}
+    err.statusCode = err.statusCode || 500;
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ✅ Export everything explicitly (prevents the “is not a function” issue)
 module.exports = {
   getWalletBalance,
   debitWallet,
   creditWallet,
   getWalletTransactions,
+  getWalletTransactionsEnriched,
 };
