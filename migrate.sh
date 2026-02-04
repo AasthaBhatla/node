@@ -19,8 +19,9 @@ echo "Running DB migrations..."
 # docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/notifications.sql
 # docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/options.sql
 # docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/jobs.sql
-docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/volunteer_applications.sql
-docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/ngo_help_requests.sql
+# docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/volunteer_applications.sql
+# docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/ngo_help_requests.sql
+docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/appointments.sql
 
 
 
