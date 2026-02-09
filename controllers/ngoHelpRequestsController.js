@@ -1,5 +1,17 @@
 // controllers/ngoHelpRequestsController.js
 const svc = require("../services/ngoHelpRequestsService");
+const notify = require("../services/notify");
+const userService = require("../services/userService");
+
+function displayFirstName(userObj, fallback = "Someone") {
+  const first =
+    userObj?.metadata?.first_name ||
+    userObj?.metadata?.name ||
+    userObj?.metadata?.display_name ||
+    "";
+  const v = String(first).trim();
+  return v || fallback;
+}
 
 function success(res, data, message = null) {
   return res.json({
@@ -29,6 +41,32 @@ async function apply(req, res) {
   });
 
   if (!r.ok) return failure(res, r.message, r.statusCode || 400);
+
+  // This notifies the NGO about the Help Request
+  try {
+    const client = await userService.getUserById(clientUserId);
+    const clientName = displayFirstName(client, "A client");
+    await notify.user(
+      ngoUserId,
+      {
+        title: "New Help Request",
+        body: `${clientName} submitted a help request.`,
+        data: {
+          type: "ngo_help_request_created",
+          ngo_help_request_id: r.data.id,
+          client_user_id: clientUserId,
+          ngo_user_id: ngoUserId,
+        },
+        push: true,
+        store: true,
+      },
+      "ngo.help_request.created",
+    );
+  } catch (e) {
+    // Don’t fail the API if notification fails
+    console.error("Notify NGO failed:", e.message || e);
+  }
+
   return success(res, r.data, "Help request submitted");
 }
 
@@ -114,6 +152,40 @@ async function ngoDecide(req, res) {
   });
 
   if (!r.ok) return failure(res, r.message, r.statusCode || 400);
+
+  // ✅ Notify the client who applied
+  try {
+    const status = r.data.status; // "accepted" or "rejected"
+    const clientUserId = r.data.client_user_id;
+
+    // fetch NGO profile to get first_name
+    const ngo = await userService.getUserById(ngoUserId);
+    const ngoName = displayFirstName(ngo, "The NGO");
+
+    await notify.user(
+      clientUserId,
+      {
+        title: "Help Request Update",
+        body:
+          status === "accepted"
+            ? `${ngoName} accepted your help request.`
+            : `${ngoName} rejected your help request.`,
+        data: {
+          type: "ngo_help_request_decided",
+          ngo_help_request_id: r.data.id,
+          decision: status,
+          ngo_user_id: ngoUserId,
+          note: r.data.ngo_decision_note || null,
+        },
+        push: true,
+        store: true,
+      },
+      "ngo.help_request.decided",
+    );
+  } catch (e) {
+    console.error("Notify client failed:", e.message || e);
+  }
+
   return success(res, r.data, `Request ${r.data.status}`);
 }
 
