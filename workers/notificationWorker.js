@@ -17,12 +17,16 @@ function sleep(ms) {
 
 async function lockJobs(client) {
   const { rows } = await client.query(
-    `SELECT id, event_key, target_type, target_value, payload, attempts
-     FROM notification_jobs
-     WHERE status = 'queued' AND attempts < $1
-     ORDER BY created_at ASC
-     LIMIT $2
-     FOR UPDATE SKIP LOCKED`,
+    `
+    SELECT id, event_key, target_type, target_value, payload, attempts
+    FROM notification_jobs
+    WHERE status = 'queued'
+      AND (run_at IS NULL OR run_at <= NOW())
+      AND attempts < $1
+    ORDER BY COALESCE(run_at, created_at) ASC
+    LIMIT $2
+    FOR UPDATE SKIP LOCKED
+    `,
     [MAX_ATTEMPTS, BATCH_SIZE],
   );
   return rows;
@@ -57,7 +61,16 @@ async function getUserIdsForTarget(target_type, target_value) {
     const ids = Array.isArray(target_value?.user_ids)
       ? target_value.user_ids
       : [];
-    return ids.map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    const parsed = ids.map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    if (!parsed.length) return [];
+
+    // ✅ keep only existing users to avoid FK errors
+    const { rows } = await pool.query(
+      `SELECT id FROM users WHERE id = ANY($1::int[])`,
+      [parsed],
+    );
+
+    return rows.map((r) => r.id);
   }
 
   if (target_type === "role") {
@@ -82,53 +95,174 @@ async function getUserIdsForTarget(target_type, target_value) {
   return [];
 }
 
+// Replace your existing processJob(job) with this complete corrected version.
 async function processJob(job) {
   const p = job.payload || {};
+
   const title = String(p.title || "").trim();
   const body = String(p.body || "").trim();
   const data = p.data && typeof p.data === "object" ? p.data : {};
-  const push = p.push !== false;
-  const store = p.store !== false;
+  const push = p.push !== false; // default true
+  const store = p.store !== false; // default true
   const channel = p.channel || "push";
 
   if (!title || !body) throw new Error("Invalid payload: title/body required");
 
-  // Resolve targets → userIds
-  const userIds = await getUserIdsForTarget(job.target_type, job.target_value);
+  // Resolve targets → userIds (should already filter invalids if you patch getUserIdsForTarget,
+  // but we still guard here)
+  let userIds = await getUserIdsForTarget(job.target_type, job.target_value);
+  userIds = (Array.isArray(userIds) ? userIds : [])
+    .map((x) => parseInt(x, 10))
+    .filter(Number.isFinite);
 
-  // 1) Store to inbox
-  if (store && userIds.length) {
-    // store one-by-one (simple, safe). Can be optimized later via bulk insert.
-    for (const uid of userIds) {
-      await storeNotification(uid, {
-        title,
-        body,
-        data,
-        channel,
-        job_id: job.id,
-      });
-    }
+  if (!userIds.length) {
+    // Nothing to do — treat as success so it doesn't retry forever
+    return {
+      ok: true,
+      users: 0,
+      stored_ok: 0,
+      stored_fail: 0,
+      pushed_ok: 0,
+      pushed_fail: 0,
+    };
   }
 
-  // 2) Push delivery
-  if (push) {
-    // For "all" you can use an FCM topic instead IF you manage topic subscriptions.
-    // For now we do token-based delivery.
-    if (userIds.length) {
-      const tokens = await getTokensByUserIds(userIds);
-      if (tokens.length) {
-        // chunk 500
-        for (let i = 0; i < tokens.length; i += 500) {
-          await sendToTokens(tokens.slice(i, i + 500), {
-            notification: { title, body },
-            data,
+  // --- 1) STORE to inbox (never let one user failure kill the whole job) ---
+  let stored_ok = 0;
+  let stored_fail = 0;
+  const store_errors = []; // keep small sample for debugging
+
+  if (store) {
+    for (const uid of userIds) {
+      try {
+        await storeNotification(uid, {
+          title,
+          body,
+          data,
+          channel,
+          job_id: job.id,
+        });
+        stored_ok++;
+      } catch (err) {
+        stored_fail++;
+        if (store_errors.length < 10) {
+          store_errors.push({
+            user_id: uid,
+            message: err?.message || String(err),
+            code: err?.code,
           });
         }
+        console.error("❌ storeNotification failed:", {
+          job_id: job.id,
+          user_id: uid,
+          message: err?.message,
+          code: err?.code,
+        });
+        // continue
       }
     }
   }
 
-  return { ok: true, users: userIds.length };
+  // --- 2) PUSH delivery (never let one chunk failure kill all chunks) ---
+  let pushed_ok = 0;
+  let pushed_fail = 0;
+  const push_errors = [];
+
+  if (push) {
+    try {
+      const tokens = await getTokensByUserIds(userIds);
+
+      if (Array.isArray(tokens) && tokens.length) {
+        for (let i = 0; i < tokens.length; i += 500) {
+          const chunk = tokens.slice(i, i + 500);
+          try {
+            await sendToTokens(chunk, {
+              notification: { title, body },
+              data,
+            });
+            pushed_ok += chunk.length;
+          } catch (err) {
+            pushed_fail += chunk.length;
+            if (push_errors.length < 10) {
+              push_errors.push({
+                chunk_index: Math.floor(i / 500),
+                chunk_size: chunk.length,
+                message: err?.message || String(err),
+                code: err?.code,
+              });
+            }
+            console.error("❌ sendToTokens chunk failed:", {
+              job_id: job.id,
+              chunk_index: Math.floor(i / 500),
+              chunk_size: chunk.length,
+              message: err?.message,
+              code: err?.code,
+            });
+            // continue to next chunk
+          }
+        }
+      }
+    } catch (err) {
+      // token fetch failed — treat as push failure but do not fail store successes
+      pushed_fail = -1; // signal "push system failure"
+      if (push_errors.length < 10) {
+        push_errors.push({
+          message: err?.message || String(err),
+          code: err?.code,
+        });
+      }
+      console.error("❌ push pipeline failed:", {
+        job_id: job.id,
+        message: err?.message,
+        code: err?.code,
+      });
+    }
+  }
+
+  /**
+   * IMPORTANT DECISION:
+   * - We DO NOT throw if some users fail — otherwise one bad user makes the whole job retry.
+   * - We only throw if NOTHING succeeded at all (neither store nor push), so retries still help
+   *   in transient infra issues.
+   */
+  const anyStoreSuccess = store ? stored_ok > 0 : false;
+  const anyPushSuccess = push ? pushed_ok > 0 : false;
+
+  const anySuccess = (store && anyStoreSuccess) || (push && anyPushSuccess);
+
+  if (!anySuccess) {
+    // If push was requested and token fetch/send completely failed and store also failed,
+    // then retry could help — throw to trigger retry.
+    const reasonParts = [];
+    if (store) reasonParts.push(`store_ok=0 store_fail=${stored_fail}`);
+    if (push) reasonParts.push(`push_ok=${pushed_ok} push_fail=${pushed_fail}`);
+    const reason = reasonParts.join(" | ") || "no_success";
+
+    const err = new Error(
+      `Notification job produced no successful deliveries: ${reason}`,
+    );
+    err.details = {
+      stored_ok,
+      stored_fail,
+      pushed_ok,
+      pushed_fail,
+      store_errors,
+      push_errors,
+    };
+    throw err;
+  }
+
+  return {
+    ok: true,
+    users: userIds.length,
+    stored_ok,
+    stored_fail,
+    pushed_ok,
+    pushed_fail,
+    // helpful for debugging; keep small
+    ...(store_errors.length ? { store_errors } : {}),
+    ...(push_errors.length ? { push_errors } : {}),
+  };
 }
 
 async function main() {

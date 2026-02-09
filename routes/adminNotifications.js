@@ -1,3 +1,4 @@
+// routes/adminNotifications.js
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -6,50 +7,193 @@ const notify = require("../services/notify");
 // Admin-only guard
 router.use(authMiddleware);
 router.use((req, res, next) => {
-  if (req.user?.role !== "admin")
-    return res.status(403).json({ error: "Only admin" });
+  if (String(req.user?.role || "").toLowerCase() !== "admin") {
+    return res
+      .status(403)
+      .json({ status: "failure", body: { message: "Only admin" } });
+  }
   next();
 });
 
+function failure(res, message, statusCode = 400) {
+  return res.status(statusCode).json({ status: "failure", body: { message } });
+}
+
+function pickPayload(req) {
+  const { title, body, data, push, store, channel } = req.body || {};
+  return { title, body, data, push, store, channel };
+}
+
+function requireRunAt(req, res) {
+  const run_at = req.body?.run_at;
+  if (!run_at || typeof run_at !== "string" || !run_at.trim()) {
+    failure(
+      res,
+      "run_at is required (ISO string). Example: 2026-02-15T18:00:00+05:30",
+      400,
+    );
+    return null;
+  }
+  return run_at.trim();
+}
+
+/**
+ * IMMEDIATE
+ */
+
 // Send to ALL users
 router.post("/all", async (req, res) => {
-  const { title, body, data, push, store } = req.body || {};
-  const job = await notify.all({ title, body, data, push, store }, "admin.all");
-  res.status(200).json({ message: "Queued", job });
+  try {
+    const job = await notify.all(pickPayload(req), "admin.all");
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Queued", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to queue", 500);
+  }
 });
 
 // Send to ROLE
 router.post("/role", async (req, res) => {
-  const { role, title, body, data, push, store } = req.body || {};
-  const job = await notify.role(
-    role,
-    { title, body, data, push, store },
-    "admin.role",
-  );
-  res.status(200).json({ message: "Queued", job });
+  try {
+    const { role } = req.body || {};
+    if (!role) return failure(res, "role is required");
+
+    const job = await notify.role(role, pickPayload(req), "admin.role");
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Queued", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to queue", 500);
+  }
 });
 
 // Send to ONE user
 router.post("/user/:id", async (req, res) => {
-  const userId = parseInt(req.params.id, 10);
-  const { title, body, data, push, store } = req.body || {};
-  const job = await notify.user(
-    userId,
-    { title, body, data, push, store },
-    "admin.user",
-  );
-  res.status(200).json({ message: "Queued", job });
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(userId)) return failure(res, "Invalid user id");
+
+    const job = await notify.user(userId, pickPayload(req), "admin.user");
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Queued", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to queue", 500);
+  }
 });
 
 // Send to MANY users
 router.post("/users", async (req, res) => {
-  const { user_ids, title, body, data, push, store } = req.body || {};
-  const job = await notify.users(
-    user_ids,
-    { title, body, data, push, store },
-    "admin.users",
-  );
-  res.status(200).json({ message: "Queued", job });
+  try {
+    const { user_ids } = req.body || {};
+    if (!Array.isArray(user_ids) || !user_ids.length) {
+      return failure(res, "user_ids[] is required");
+    }
+
+    const job = await notify.users(user_ids, pickPayload(req), "admin.users");
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Queued", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to queue", 500);
+  }
+});
+
+/**
+ * SCHEDULED
+ */
+
+// Schedule to ALL users
+router.post("/all/schedule", async (req, res) => {
+  try {
+    const run_at = requireRunAt(req, res);
+    if (!run_at) return;
+
+    const job = await notify.allAt(
+      pickPayload(req),
+      run_at,
+      "admin.all.scheduled",
+    );
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Scheduled", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to schedule", 500);
+  }
+});
+
+// Schedule to ROLE
+router.post("/role/schedule", async (req, res) => {
+  try {
+    const { role } = req.body || {};
+    if (!role) return failure(res, "role is required");
+
+    const run_at = requireRunAt(req, res);
+    if (!run_at) return;
+
+    const job = await notify.roleAt(
+      role,
+      pickPayload(req),
+      run_at,
+      "admin.role.scheduled",
+    );
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Scheduled", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to schedule", 500);
+  }
+});
+
+// Schedule to ONE user
+router.post("/user/:id/schedule", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(userId)) return failure(res, "Invalid user id");
+
+    const run_at = requireRunAt(req, res);
+    if (!run_at) return;
+
+    const job = await notify.userAt(
+      userId,
+      pickPayload(req),
+      run_at,
+      "admin.user.scheduled",
+    );
+
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Scheduled", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to schedule", 500);
+  }
+});
+
+// Schedule to MANY users
+router.post("/users/schedule", async (req, res) => {
+  try {
+    const { user_ids } = req.body || {};
+    if (!Array.isArray(user_ids) || !user_ids.length) {
+      return failure(res, "user_ids[] is required");
+    }
+
+    const run_at = requireRunAt(req, res);
+    if (!run_at) return;
+
+    const job = await notify.usersAt(
+      user_ids,
+      pickPayload(req),
+      run_at,
+      "admin.users.scheduled",
+    );
+
+    return res
+      .status(200)
+      .json({ status: "success", body: { message: "Scheduled", job } });
+  } catch (err) {
+    return failure(res, err?.message || "Failed to schedule", 500);
+  }
 });
 
 module.exports = router;

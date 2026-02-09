@@ -51,3 +51,9 @@ ALTER TABLE notifications
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_user_job_unique
   ON notifications(user_id, job_id)
   WHERE job_id IS NOT NULL;
+
+ALTER TABLE notification_jobs
+ADD COLUMN IF NOT EXISTS run_at TIMESTAMP NULL;
+
+CREATE INDEX IF NOT EXISTS notification_jobs_run_at_idx
+ON notification_jobs (status, run_at);
