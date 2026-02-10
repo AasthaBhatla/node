@@ -1,12 +1,38 @@
 // controllers/jobController.js
 const jobService = require("../services/jobService");
 const jobPartnerListsService = require("../services/jobPartnerListsService");
+
+const notify = require("../services/notify");
+const userService = require("../services/userService");
+const pool = require("../db"); // used only to fetch job title + client/partner ids for notifications
+
 const PARTNER_ROLES = new Set(["officer", "lawyer", "ngo", "expert"]);
 // -------------------------------------
 // Small response helpers (consistent)
 // -------------------------------------
 function success(res, body = {}, statusCode = 200) {
   return res.status(statusCode).json({ status: "success", body });
+}
+
+function displayFirstName(userObj, fallback = "Someone") {
+  const first =
+    userObj?.metadata?.first_name ||
+    userObj?.metadata?.name ||
+    userObj?.metadata?.display_name ||
+    "";
+  const v = String(first).trim();
+  return v || fallback;
+}
+
+async function getJobMini(jobId) {
+  const r = await pool.query(
+    `SELECT id, title, client_id, assigned_partner_id, status
+     FROM jobs
+     WHERE id = $1
+     LIMIT 1`,
+    [parseInt(jobId, 10)],
+  );
+  return r.rows[0] || null;
 }
 
 function failure(
@@ -172,6 +198,31 @@ exports.assignJob = async (req, res) => {
       escrow_idempotency_key: escrow_idempotency_key || null,
     });
 
+    //Notify partner that they were assigned
+    try {
+      const job = await getJobMini(jobId);
+      const client = await userService.getUserById(clientId);
+      const clientName = displayFirstName(client, "A client");
+
+      await notify.user(
+        parseInt(partner_id, 10),
+        {
+          title: "Job Assigned To You",
+          body: `${clientName} assigned you a job: ${job?.title || "Job"}.`,
+          data: {
+            type: "job_assigned",
+            job_id: parseInt(jobId, 10),
+            client_id: clientId,
+          },
+          push: true,
+          store: true,
+        },
+        "jobs.assigned",
+      );
+    } catch (e) {
+      console.error("Notify partner (job assigned) failed:", e.message || e);
+    }
+
     return success(res, out, 200);
   } catch (err) {
     return failure(
@@ -196,6 +247,38 @@ exports.clientApproveComplete = async (req, res) => {
       jobId,
       release_idempotency_key: release_idempotency_key || null,
     });
+
+    // ✅ Notify partner payout approved
+    try {
+      const job = await getJobMini(jobId);
+      const partnerId = job?.assigned_partner_id;
+
+      if (partnerId) {
+        const client = await userService.getUserById(clientId);
+        const clientName = displayFirstName(client, "The client");
+
+        await notify.user(
+          partnerId,
+          {
+            title: "Job Completed",
+            body: `${clientName} approved completion for: ${job?.title || "Job"}.`,
+            data: {
+              type: "job_completion_approved",
+              job_id: parseInt(jobId, 10),
+              client_id: clientId,
+            },
+            push: true,
+            store: true,
+          },
+          "jobs.completion.approved",
+        );
+      }
+    } catch (e) {
+      console.error(
+        "Notify partner (client approved completion) failed:",
+        e.message || e,
+      );
+    }
 
     return success(res, out, 200);
   } catch (err) {
@@ -226,6 +309,34 @@ exports.upsertApplication = async (req, res) => {
       quote_credits,
       message,
     });
+
+    // Notify client that a partner applied
+    try {
+      const job = await getJobMini(jobId);
+      if (job?.client_id) {
+        const partner = await userService.getUserById(partnerId);
+        const partnerName = displayFirstName(partner, "A partner");
+
+        await notify.user(
+          job.client_id,
+          {
+            title: "New Job Application",
+            body: `${partnerName} applied to your job: ${job.title || "Job"}.`,
+            data: {
+              type: "job_application_created",
+              job_id: job.id,
+              partner_id: partnerId,
+              quote_credits: Number.parseInt(quote_credits, 10),
+            },
+            push: true,
+            store: true,
+          },
+          "jobs.application.created",
+        );
+      }
+    } catch (e) {
+      console.error("Notify client (partner applied) failed:", e.message || e);
+    }
 
     return success(res, out, 200);
   } catch (err) {
@@ -263,6 +374,37 @@ exports.partnerMarkComplete = async (req, res) => {
     const jobId = req.params.jobId;
 
     const out = await jobService.partnerMarkComplete({ partnerId, jobId });
+
+    // Notify client that completion was requested
+    try {
+      const job = await getJobMini(jobId);
+      if (job?.client_id) {
+        const partner = await userService.getUserById(partnerId);
+        const partnerName = displayFirstName(partner, "Your partner");
+
+        await notify.user(
+          job.client_id,
+          {
+            title: "Completion Requested",
+            body: `${partnerName} marked the job as complete: ${job.title || "Job"}.`,
+            data: {
+              type: "job_completion_requested",
+              job_id: job.id,
+              partner_id: partnerId,
+            },
+            push: true,
+            store: true,
+          },
+          "jobs.completion.requested",
+        );
+      }
+    } catch (e) {
+      console.error(
+        "Notify client (partner marked complete) failed:",
+        e.message || e,
+      );
+    }
+
     return success(res, out, 200);
   } catch (err) {
     return failure(
