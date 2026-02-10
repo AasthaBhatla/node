@@ -1,5 +1,17 @@
 // controllers/volunteerApplicationsController.js
 const svc = require("../services/volunteerApplicationsService");
+const notify = require("../services/notify");
+const userService = require("../services/userService");
+
+function displayFirstName(userObj, fallback = "Someone") {
+  const first =
+    userObj?.metadata?.first_name ||
+    userObj?.metadata?.name ||
+    userObj?.metadata?.display_name ||
+    "";
+  const v = String(first).trim();
+  return v || fallback;
+}
 
 function success(res, data, message = null) {
   return res.json({
@@ -29,6 +41,32 @@ async function apply(req, res) {
   });
 
   if (!r.ok) return failure(res, r.message, 400);
+
+  // Notify the NGO user
+  try {
+    const applicant = await userService.getUserById(applicantUserId);
+    const applicantName = displayFirstName(applicant, "A volunteer");
+
+    await notify.user(
+      ngoUserId,
+      {
+        title: "New Volunteer Application",
+        body: `${applicantName} applied to volunteer with your NGO.`,
+        data: {
+          type: "volunteer_application_created",
+          volunteer_application_id: r.data.id,
+          applicant_user_id: applicantUserId,
+          ngo_user_id: ngoUserId,
+        },
+        push: true,
+        store: true,
+      },
+      "ngo.volunteer_application.created",
+    );
+  } catch (e) {
+    console.error("Notify NGO (volunteer apply) failed:", e.message || e);
+  }
+
   return success(res, r.data, "Application submitted");
 }
 
@@ -102,6 +140,42 @@ async function ngoDecide(req, res) {
   });
 
   if (!r.ok) return failure(res, r.message, 400);
+
+  // ✅ Notify the applicant
+  try {
+    const status = r.data.status; // accepted/rejected
+    const applicantUserId = r.data.applicant_user_id;
+
+    const ngo = await userService.getUserById(ngoUserId);
+    const ngoName = displayFirstName(ngo, "The NGO");
+
+    await notify.user(
+      applicantUserId,
+      {
+        title: "Volunteer Application Update",
+        body:
+          status === "accepted"
+            ? `${ngoName} accepted your volunteer application.`
+            : `${ngoName} rejected your volunteer application.`,
+        data: {
+          type: "volunteer_application_decided",
+          volunteer_application_id: r.data.id,
+          decision: status,
+          ngo_user_id: ngoUserId,
+          note: r.data.ngo_decision_note || null,
+        },
+        push: true,
+        store: true,
+      },
+      "ngo.volunteer_application.decided",
+    );
+  } catch (e) {
+    console.error(
+      "Notify applicant (volunteer decide) failed:",
+      e.message || e,
+    );
+  }
+
   return success(res, r.data, `Application ${r.data.status}`);
 }
 
