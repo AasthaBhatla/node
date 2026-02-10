@@ -65,6 +65,156 @@ async function getPartnerTimezone(partnerId) {
   }
 }
 
+function parseToUTCDateTime(value) {
+  // value can be ISO string or JS Date from Postgres
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    const dt = DateTime.fromJSDate(value, { zone: "utc" });
+    return dt.isValid ? dt : null;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const dt = DateTime.fromISO(raw, { setZone: true }).toUTC();
+  return dt.isValid ? dt : null;
+}
+
+async function scheduleAppointmentReminders({
+  appointment,
+  clientId,
+  partnerId,
+  partnerTz,
+  clientTz = "Asia/Kolkata",
+  clientName = "The client",
+  partnerName = "The partner",
+}) {
+  // appointment.start_at can be JS Date or ISO string; we normalize to UTC
+  const startUtc = parseToUTCDateTime(appointment?.start_at);
+  if (!startUtc) return;
+
+  const nowUtc = DateTime.utc();
+
+  const tMinus10 = startUtc.minus({ minutes: 10 });
+  const atTime = startUtc;
+
+  // Skip reminders that are already in the past (with a small buffer)
+  const schedulePoints = [
+    { whenUtc: tMinus10, kind: "tminus10" },
+    { whenUtc: atTime, kind: "at" },
+  ].filter((x) => x.whenUtc > nowUtc.plus({ seconds: 5 }));
+
+  if (!schedulePoints.length) return;
+
+  const apptIdStr = String(appointment.id);
+  const startAtRaw = appointment.start_at; // keep original for display + data
+
+  // Human-friendly local time strings for message bodies
+  const whenForPartner = formatApptDateTime(startAtRaw, partnerTz);
+  const whenForClient = formatApptDateTime(startAtRaw, clientTz);
+
+  for (const sp of schedulePoints) {
+    const eventKey =
+      sp.kind === "tminus10"
+        ? "appointments.reminder.tminus10"
+        : "appointments.reminder.at";
+
+    const title =
+      sp.kind === "tminus10"
+        ? "Appointment starts in 10 minutes"
+        : "Appointment starting now";
+
+    // ---------------------------
+    // Partner reminder
+    // ---------------------------
+    await notify.userAt(
+      Number(partnerId),
+      {
+        title,
+        body:
+          sp.kind === "tminus10"
+            ? `Your appointment with ${clientName} is at ${whenForPartner}.`
+            : `Your appointment with ${clientName} is starting now (${whenForPartner}).`,
+        data: {
+          type:
+            sp.kind === "tminus10"
+              ? "appointment_reminder_10m"
+              : "appointment_reminder_now",
+          reminder_kind: sp.kind, // ✅ used for cancellation
+          appointment_id: apptIdStr, // ✅ store as string for JSONB matching
+          client_id: Number(clientId),
+          partner_id: Number(partnerId),
+          start_at: startAtRaw,
+          timezone: partnerTz,
+        },
+        push: true,
+        store: true,
+      },
+      sp.whenUtc.toISO(), // ISO string (UTC). notify.js will normalize to UTC anyway.
+      eventKey,
+    );
+
+    // ---------------------------
+    // Client reminder
+    // ---------------------------
+    await notify.userAt(
+      Number(clientId),
+      {
+        title,
+        body:
+          sp.kind === "tminus10"
+            ? `Your appointment with ${partnerName} is at ${whenForClient}.`
+            : `Your appointment with ${partnerName} is starting now (${whenForClient}).`,
+        data: {
+          type:
+            sp.kind === "tminus10"
+              ? "appointment_reminder_10m"
+              : "appointment_reminder_now",
+          reminder_kind: sp.kind, // ✅ used for cancellation
+          appointment_id: apptIdStr, // ✅ store as string for JSONB matching
+          client_id: Number(clientId),
+          partner_id: Number(partnerId),
+          start_at: startAtRaw,
+          timezone: clientTz,
+        },
+        push: true,
+        store: true,
+      },
+      sp.whenUtc.toISO(),
+      eventKey,
+    );
+  }
+}
+
+async function cancelAppointmentReminders({
+  appointmentId,
+  clientId,
+  partnerId,
+}) {
+  const apptId = String(appointmentId);
+
+  // cancel partner reminders
+  await notify.cancelScheduled({
+    event_key_like: "appointments.reminder.%",
+    target_type: "user",
+    target_user_id: Number(partnerId),
+    data_equals: { appointment_id: apptId },
+    data_in: { reminder_kind: ["tminus10", "at"] },
+    reason: "appointment_cancelled",
+  });
+
+  // cancel client reminders
+  await notify.cancelScheduled({
+    event_key_like: "appointments.reminder.%",
+    target_type: "user",
+    target_user_id: Number(clientId),
+    data_equals: { appointment_id: apptId },
+    data_in: { reminder_kind: ["tminus10", "at"] },
+    reason: "appointment_cancelled",
+  });
+}
+
 exports.upsertPartnerSettings = async (req, res) => {
   try {
     const out = await svc.upsertPartnerSettings({
@@ -238,6 +388,19 @@ exports.cancelAsClient = async (req, res) => {
       );
     }
 
+    try {
+      await cancelAppointmentReminders({
+        appointmentId: out.id,
+        clientId: Number(out.client_id),
+        partnerId: Number(out.partner_id),
+      });
+    } catch (e) {
+      console.error(
+        "Cancel appointment reminders (by client) failed:",
+        e.message || e,
+      );
+    }
+
     return success(res, { appointment: out });
   } catch (e) {
     return failure(res, e.message, e.statusCode || 500);
@@ -296,6 +459,35 @@ exports.respondAsPartner = async (req, res) => {
       console.error("Notify client (partner respond) failed:", e.message || e);
     }
 
+    // After notifying client accepted/rejected...
+    if (out.status === "accepted") {
+      try {
+        const partnerId = Number(out.partner_id);
+        const clientId = Number(out.client_id);
+
+        const partnerTz = await getPartnerTimezone(partnerId);
+        const clientTz = "Asia/Kolkata"; // replace later if you store client tz
+
+        const partner = await userService.getUserById(partnerId);
+        const client = await userService.getUserById(clientId);
+
+        const partnerName = displayFirstName(partner, "The partner");
+        const clientName = displayFirstName(client, "The client");
+
+        await scheduleAppointmentReminders({
+          appointment: out,
+          clientId,
+          partnerId,
+          partnerTz,
+          clientTz,
+          clientName,
+          partnerName,
+        });
+      } catch (e) {
+        console.error("Schedule appointment reminders failed:", e.message || e);
+      }
+    }
+
     return success(res, { appointment: out });
   } catch (e) {
     return failure(res, e.message, e.statusCode || 500);
@@ -340,6 +532,18 @@ exports.cancelAsPartner = async (req, res) => {
     } catch (e) {
       console.error(
         "Notify client (cancelled by partner) failed:",
+        e.message || e,
+      );
+    }
+    try {
+      await cancelAppointmentReminders({
+        appointmentId: out.id,
+        clientId: Number(out.client_id),
+        partnerId: Number(out.partner_id),
+      });
+    } catch (e) {
+      console.error(
+        "Cancel appointment reminders (by partner) failed:",
         e.message || e,
       );
     }

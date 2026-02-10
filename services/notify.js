@@ -1,6 +1,9 @@
 // services/notify.js
 const { DateTime } = require("luxon");
-const { enqueueJob } = require("./notificationQueueService");
+const {
+  enqueueJob,
+  cancelScheduledJobs,
+} = require("./notificationQueueService");
 
 const DEFAULT_ZONE = process.env.NOTIF_TIMEZONE || "Asia/Kolkata";
 
@@ -202,7 +205,10 @@ async function allAt(payload, run_at, event_key = "custom.all.scheduled") {
     run_at: runAtUtcIso,
   });
 }
-
+async function cancelScheduled(filter, event_key = "custom.cancel.scheduled") {
+  // event_key is just for your logs/consistency; not stored unless you want
+  return cancelScheduledJobs(filter);
+}
 module.exports = {
   user,
   users,
@@ -212,4 +218,5 @@ module.exports = {
   usersAt,
   roleAt,
   allAt,
+  cancelScheduled,
 };
