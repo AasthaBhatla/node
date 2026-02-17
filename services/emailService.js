@@ -73,6 +73,15 @@ function createTransporter() {
   });
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) =>
+      setTimeout(() => rej(new Error("SMTP timeout")), ms),
+    ),
+  ]);
+}
+
 /**
  * Common send function:
  * - accepts single message object OR array of messages
@@ -80,23 +89,34 @@ function createTransporter() {
  * - returns detailed results, including partial failures for bulk
  */
 async function sendEmail(input) {
-  const transporter = createTransporter();
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user, pass },
+
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
+  });
+
   const from = process.env.GMAIL_FROM || process.env.GMAIL_USER;
 
   // SINGLE
   if (!Array.isArray(input)) {
     const msg = validateMessage(input);
-    const info = await transporter.sendMail({
-      from,
-      to: asAddressField(msg.to),
-      cc: asAddressField(msg.cc),
-      bcc: asAddressField(msg.bcc),
-      subject: msg.subject,
-      text: msg.text,
-      html: msg.html,
-      replyTo: msg.replyTo,
-      headers: msg.headers,
-    });
+    const info = await withTimeout(
+      transporter.sendMail({
+        from,
+        to: asAddressField(msg.to),
+        cc: asAddressField(msg.cc),
+        bcc: asAddressField(msg.bcc),
+        subject: msg.subject,
+        text: msg.text,
+        html: msg.html,
+        replyTo: msg.replyTo,
+        headers: msg.headers,
+      }),
+      25000,
+    );
 
     return {
       mode: "single",
