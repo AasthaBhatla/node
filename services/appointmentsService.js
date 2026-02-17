@@ -42,6 +42,20 @@ function parseISOorThrow(dtStr, message = "Invalid datetime") {
   return dt;
 }
 
+// Add this helper near overlapsAny()
+function overlapsAnyBool(slotStart, slotEnd, ranges) {
+  const slot = Interval.fromDateTimes(slotStart, slotEnd);
+  for (const r of ranges) {
+    const a = r.start_at
+      ? DateTime.fromISO(r.start_at, { setZone: true })
+      : r.start;
+    const b = r.end_at ? DateTime.fromISO(r.end_at, { setZone: true }) : r.end;
+    const it = Interval.fromDateTimes(a, b);
+    if (slot.overlaps(it)) return true;
+  }
+  return false;
+}
+
 /**
  * windows payload format:
  * {
@@ -266,13 +280,35 @@ async function fetchDayBooked(partnerId, dayStartISO, dayEndISO) {
   return r.rows;
 }
 
-function overlapsAny(slotStart, slotEnd, ranges) {
+function toDT(v, zone = null) {
+  if (!v) return null;
+
+  // pg may return TIMESTAMPTZ as JS Date
+  if (v instanceof Date) {
+    const dt = DateTime.fromJSDate(v, { zone: "utc" });
+    return zone ? dt.setZone(zone) : dt;
+  }
+
+  const raw = String(v).trim();
+  if (!raw) return null;
+
+  const dt = DateTime.fromISO(raw, { setZone: true });
+  if (!dt.isValid) return null;
+
+  return zone ? dt.setZone(zone) : dt;
+}
+
+function overlapsAny(slotStart, slotEnd, ranges, tz = null) {
   const slot = Interval.fromDateTimes(slotStart, slotEnd);
+
   for (const r of ranges) {
-    const a = r.start_at
-      ? DateTime.fromISO(r.start_at, { setZone: true })
-      : r.start;
-    const b = r.end_at ? DateTime.fromISO(r.end_at, { setZone: true }) : r.end;
+    // support both shapes:
+    // {start_at, end_at} from DB
+    // OR {start, end} custom
+    const a = toDT(r.start_at ?? r.start, tz);
+    const b = toDT(r.end_at ?? r.end, tz);
+    if (!a || !b) continue;
+
     const it = Interval.fromDateTimes(a, b);
     if (slot.overlaps(it)) return true;
   }
@@ -331,20 +367,30 @@ async function getPartnerSlotsByDate({ partnerId, date }) {
       const slotStart = cursor;
       const slotEnd = cursor.plus({ minutes: duration });
 
-      const blocked =
-        overlapsAny(slotStart, slotEnd, timeOff) ||
-        overlapsAny(slotStart, slotEnd, booked);
+      const isTimeOff = overlapsAny(slotStart, slotEnd, timeOff);
+      const isBooked = overlapsAny(slotStart, slotEnd, booked);
 
-      if (!blocked) {
-        slots.push({
-          start_at: slotStart.toUTC().toISO(),
-          end_at: slotEnd.toUTC().toISO(),
-          start_local: slotStart.toISO(),
-          end_local: slotEnd.toISO(),
-          timezone: tz,
-          minutes: duration,
-        });
-      }
+      const isAvailable = !isTimeOff && !isBooked;
+
+      // ✅ IMPORTANT:
+      // We now return ALL slots (available + blocked) so `is_booked` is meaningful.
+      slots.push({
+        start_at: slotStart.toUTC().toISO(),
+        end_at: slotEnd.toUTC().toISO(),
+        start_local: slotStart.toISO(),
+        end_local: slotEnd.toISO(),
+        timezone: tz,
+        minutes: duration,
+
+        // ✅ new keys
+        is_booked: isBooked,
+        is_available: isAvailable,
+        blocked_reason: !isAvailable
+          ? isBooked
+            ? "booked"
+            : "time_off"
+          : null,
+      });
 
       cursor = cursor.plus({ minutes: duration });
     }
