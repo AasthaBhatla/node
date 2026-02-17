@@ -60,6 +60,7 @@ async function apply(req, res) {
         },
         push: true,
         store: true,
+        email: true,
       },
       "ngo.volunteer_application.created",
     );
