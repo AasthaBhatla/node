@@ -6,6 +6,7 @@ const {
   getTokensByUserIds,
 } = require("../services/userService");
 const { storeNotification } = require("../services/notificationStoreService");
+const emailService = require("../services/emailService");
 
 const BATCH_SIZE = parseInt(process.env.NOTIF_WORKER_BATCH || "10", 10);
 const MAX_ATTEMPTS = parseInt(process.env.NOTIF_MAX_ATTEMPTS || "5", 10);
@@ -13,6 +14,29 @@ const POLL_MS = parseInt(process.env.NOTIF_WORKER_POLL_MS || "1500", 10);
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function getEmailsByUserIds(userIds = []) {
+  const ids = (Array.isArray(userIds) ? userIds : [])
+    .map((x) => parseInt(x, 10))
+    .filter(Number.isFinite);
+
+  if (!ids.length) return [];
+
+  const { rows } = await pool.query(
+    `SELECT id, email FROM users WHERE id = ANY($1::int[]) AND email IS NOT NULL`,
+    [ids],
+  );
+
+  // return array of {user_id, email}
+  return rows
+    .map((r) => ({
+      user_id: r.id,
+      email: String(r.email || "")
+        .trim()
+        .toLowerCase(),
+    }))
+    .filter((r) => r.email);
 }
 
 async function lockJobs(client) {
@@ -105,6 +129,7 @@ async function processJob(job) {
   const push = p.push !== false; // default true
   const store = p.store !== false; // default true
   const channel = p.channel || "push";
+  const email = p.email === true;
 
   if (!title || !body) throw new Error("Invalid payload: title/body required");
 
@@ -219,6 +244,64 @@ async function processJob(job) {
     }
   }
 
+  // --- 3) EMAIL delivery (optional) ---
+  let emailed_ok = 0;
+  let emailed_fail = 0;
+  const email_errors = [];
+
+  if (email) {
+    try {
+      const targets = await getEmailsByUserIds(userIds);
+
+      for (const t of targets) {
+        try {
+          await emailService.sendEmail({
+            to: t.email,
+            subject: title,
+            text: body,
+            html: `
+            <div style="font-family:Arial,sans-serif;line-height:1.5">
+              <h3 style="margin:0 0 12px">${title}</h3>
+              <p style="margin:0 0 12px">${body}</p>
+            </div>
+          `,
+          });
+          emailed_ok++;
+        } catch (err) {
+          emailed_fail++;
+          if (email_errors.length < 10) {
+            email_errors.push({
+              user_id: t.user_id,
+              email: t.email,
+              message: err?.message || String(err),
+              code: err?.code,
+            });
+          }
+          console.error("❌ email send failed:", {
+            job_id: job.id,
+            user_id: t.user_id,
+            email: t.email,
+            message: err?.message,
+            code: err?.code,
+          });
+        }
+      }
+    } catch (err) {
+      emailed_fail = -1; // pipeline failure
+      if (email_errors.length < 10) {
+        email_errors.push({
+          message: err?.message || String(err),
+          code: err?.code,
+        });
+      }
+      console.error("❌ email pipeline failed:", {
+        job_id: job.id,
+        message: err?.message,
+        code: err?.code,
+      });
+    }
+  }
+
   /**
    * IMPORTANT DECISION:
    * - We DO NOT throw if some users fail — otherwise one bad user makes the whole job retry.
@@ -227,8 +310,12 @@ async function processJob(job) {
    */
   const anyStoreSuccess = store ? stored_ok > 0 : false;
   const anyPushSuccess = push ? pushed_ok > 0 : false;
+  const anyEmailSuccess = email ? emailed_ok > 0 : false;
 
-  const anySuccess = (store && anyStoreSuccess) || (push && anyPushSuccess);
+  const anySuccess =
+    (store && anyStoreSuccess) ||
+    (push && anyPushSuccess) ||
+    (email && anyEmailSuccess);
 
   if (!anySuccess) {
     // If push was requested and token fetch/send completely failed and store also failed,
@@ -259,9 +346,12 @@ async function processJob(job) {
     stored_fail,
     pushed_ok,
     pushed_fail,
+    emailed_ok,
+    emailed_fail,
     // helpful for debugging; keep small
     ...(store_errors.length ? { store_errors } : {}),
     ...(push_errors.length ? { push_errors } : {}),
+    ...(email_errors.length ? { email_errors } : {}),
   };
 }
 

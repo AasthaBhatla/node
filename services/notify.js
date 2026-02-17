@@ -19,10 +19,12 @@ function normalizePayload(payload = {}) {
   const store = payload.store !== false; // default true
   const channel = payload.channel || "push";
 
+  const email = payload.email === true;
+
   if (!title || !body)
     throw new Error("notify payload requires title and body");
 
-  return { title, body, data, push, store, channel };
+  return { title, body, data, push, store, channel, email };
 }
 
 /**
