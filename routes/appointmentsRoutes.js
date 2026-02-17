@@ -56,6 +56,12 @@ router.get(
   appointmentsController.getPartnerSlotsByDate,
 );
 
+router.get(
+  "/partners/:partnerId/available-days",
+  authMiddleware,
+  appointmentsController.getPartnerAvailableDaysInMonth,
+);
+
 router.post("/", authMiddleware, appointmentsController.createAppointment);
 
 router.get("/me", authMiddleware, appointmentsController.listMyAppointments);

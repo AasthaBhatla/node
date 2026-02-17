@@ -642,6 +642,144 @@ async function updateTimeOff({ partnerId, timeOffId, startAt, endAt, reason }) {
   return r.rows[0];
 }
 
+async function getPartnerAvailableDaysInMonth({ partnerId, month }) {
+  await assertPartnerUser(partnerId);
+
+  const m = String(month || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) {
+    throw httpError("month is required in YYYY-MM format", 400);
+  }
+
+  const settings = await getPartnerSettings(partnerId);
+  const duration = Number(settings.slot_duration_minutes || 10);
+  const tz = settings.timezone || "Asia/Kolkata";
+
+  const monthStart = DateTime.fromISO(`${m}-01`, { zone: tz }).startOf("day");
+  if (!monthStart.isValid) throw httpError("Invalid month", 400);
+
+  const monthEnd = monthStart.endOf("month").endOf("day");
+
+  // Weekly windows for partner (all days)
+  const windowsRes = await pool.query(
+    `SELECT day_of_week, start_time, end_time
+     FROM partner_weekly_availability
+     WHERE partner_id=$1
+     ORDER BY day_of_week, start_time`,
+    [partnerId],
+  );
+
+  const windowsByDow = new Map(); // dow -> [{start_time,end_time}]
+  for (const row of windowsRes.rows) {
+    const dow = Number(row.day_of_week);
+    if (!windowsByDow.has(dow)) windowsByDow.set(dow, []);
+    windowsByDow.get(dow).push(row);
+  }
+
+  // Time-off blocks for whole month (single query)
+  const timeOffRes = await pool.query(
+    `SELECT start_at, end_at
+     FROM partner_time_off
+     WHERE partner_id=$1
+       AND start_at < $3
+       AND end_at > $2`,
+    [partnerId, monthStart.toISO(), monthEnd.toISO()],
+  );
+
+  // Booked (pending/accepted) for whole month (single query)
+  const bookedRes = await pool.query(
+    `SELECT start_at, end_at
+     FROM appointments
+     WHERE partner_id=$1
+       AND status IN ('pending','accepted')
+       AND start_at < $3
+       AND end_at > $2`,
+    [partnerId, monthStart.toISO(), monthEnd.toISO()],
+  );
+
+  const timeOffAll = timeOffRes.rows || [];
+  const bookedAll = bookedRes.rows || [];
+
+  const availableDays = [];
+  const unavailableDays = [];
+
+  // Iterate days in partner TZ
+  let day = monthStart;
+  while (day <= monthEnd) {
+    const dow0 = day.weekday === 7 ? 0 : day.weekday;
+    const dayISO = day.toFormat("yyyy-LL-dd");
+
+    const windows = windowsByDow.get(dow0) || [];
+    if (!windows.length) {
+      unavailableDays.push(dayISO);
+      day = day.plus({ days: 1 });
+      continue;
+    }
+
+    const dayStart = day.startOf("day");
+    const dayEndLocal = day.endOf("day");
+
+    // Filter month ranges to just this day (cheap enough for ~31 days)
+    const timeOff = timeOffAll.filter((r) => {
+      const a = DateTime.fromISO(r.start_at, { setZone: true }).setZone(tz);
+      const b = DateTime.fromISO(r.end_at, { setZone: true }).setZone(tz);
+      return a < dayEndLocal && b > dayStart;
+    });
+
+    const booked = bookedAll.filter((r) => {
+      const a = DateTime.fromISO(r.start_at, { setZone: true }).setZone(tz);
+      const b = DateTime.fromISO(r.end_at, { setZone: true }).setZone(tz);
+      return a < dayEndLocal && b > dayStart;
+    });
+
+    // Find if at least 1 slot exists that isn't blocked
+    let hasAnyAvailableSlot = false;
+
+    for (const w of windows) {
+      const [sh, sm] = String(w.start_time).split(":").map(Number);
+      const [eh, em] = String(w.end_time).split(":").map(Number);
+
+      let cursor = day.set({ hour: sh, minute: sm, second: 0, millisecond: 0 });
+      const windowEnd = day.set({
+        hour: eh,
+        minute: em,
+        second: 0,
+        millisecond: 0,
+      });
+
+      while (cursor.plus({ minutes: duration }) <= windowEnd) {
+        const slotStart = cursor;
+        const slotEnd = cursor.plus({ minutes: duration });
+
+        const isTimeOff = overlapsAnyBool(slotStart, slotEnd, timeOff);
+        const isBooked = overlapsAnyBool(slotStart, slotEnd, booked);
+
+        if (!isTimeOff && !isBooked) {
+          hasAnyAvailableSlot = true;
+          break;
+        }
+
+        cursor = cursor.plus({ minutes: duration });
+      }
+
+      if (hasAnyAvailableSlot) break;
+    }
+
+    if (hasAnyAvailableSlot) availableDays.push(dayISO);
+    else unavailableDays.push(dayISO);
+
+    day = day.plus({ days: 1 });
+  }
+
+  return {
+    partner_id: Number(partnerId),
+    month: m,
+    timezone: tz,
+    slot_duration_minutes: duration,
+    available_days: availableDays,
+    unavailable_days: unavailableDays,
+  };
+}
+
 module.exports = {
   upsertPartnerSettings,
   replaceWeeklyAvailability,
@@ -658,4 +796,5 @@ module.exports = {
   listTimeOff,
   deleteTimeOff,
   updateTimeOff,
+  getPartnerAvailableDaysInMonth,
 };

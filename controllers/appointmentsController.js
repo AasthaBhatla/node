@@ -625,3 +625,15 @@ exports.updateTimeOff = async (req, res) => {
     return failure(res, e.message, e.statusCode || 500);
   }
 };
+
+exports.getPartnerAvailableDaysInMonth = async (req, res) => {
+  try {
+    const out = await svc.getPartnerAvailableDaysInMonth({
+      partnerId: req.params.partnerId,
+      month: req.query.month, // YYYY-MM
+    });
+    return success(res, out);
+  } catch (e) {
+    return failure(res, e.message, e.statusCode || 500);
+  }
+};
