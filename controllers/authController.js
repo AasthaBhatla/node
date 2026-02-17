@@ -15,6 +15,7 @@ const {
   getUserById,
   updateUser,
 } = require("../services/userService");
+const emailService = require("../services/emailService");
 
 exports.login = async (req, res) => {
   const body = req.body ?? {};
@@ -41,7 +42,16 @@ exports.login = async (req, res) => {
     await attachDeviceTokenIfPresent(user.id, req.body);
 
     const otp = await setOtp(user.id);
-    console.log(`OTP sent to ${email || phone}: ${otp}`);
+
+    if (email) {
+      try {
+        await sendOtpByEmail(email, otp);
+      } catch (e) {
+        console.error("Failed to email OTP (resend):", e?.message || e);
+      }
+    }
+
+    console.log(`OTP regenerated for ${email || phone}`);
 
     return res.json({
       status: "success",
@@ -188,7 +198,16 @@ exports.resendOtp = async (req, res) => {
     }
 
     const otp = await setOtp(user.id);
-    console.log(`OTP resent to ${email || phone}: ${otp}`);
+
+    if (email) {
+      try {
+        await sendOtpByEmail(email, otp);
+      } catch (e) {
+        console.error("Failed to email OTP (resend):", e?.message || e);
+      }
+    }
+
+    console.log(`OTP regenerated for ${email || phone}: ${otp}`);
 
     res.json({
       message: "OTP resent successfully",
@@ -273,4 +292,33 @@ async function attachDeviceTokenIfPresent(userId, body) {
     safePlatform,
     safeDeviceId,
   );
+}
+
+async function sendOtpByEmail(email, otp) {
+  if (!email) return;
+
+  const safeEmail = String(email).trim().toLowerCase();
+  if (!safeEmail) return;
+
+  const subject = "Your OTP Code";
+  const text = `Your OTP is: ${otp}\n\nThis OTP is valid for a short time. If you didn’t request it, please ignore this email.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2 style="margin:0 0 12px;">Your OTP Code</h2>
+      <p style="margin:0 0 12px;">Use the OTP below to continue:</p>
+      <div style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">
+        ${otp}
+      </div>
+      <p style="margin:0;color:#666;">If you didn’t request this, you can safely ignore this email.</p>
+    </div>
+  `;
+
+  // sendEmail supports {to, subject, text/html}
+  await emailService.sendEmail({
+    to: safeEmail,
+    subject,
+    text,
+    html,
+  });
 }
