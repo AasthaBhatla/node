@@ -17,6 +17,7 @@
     "@aws-sdk/client-s3": "^3.917.0",
     "@aws-sdk/s3-request-presigner": "^3.917.0",
     "aws-sdk": "^2.1692.0",
+    "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
@@ -27,7 +28,6 @@
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.2",
     "multer": "^2.0.2",
-    "nodemailer": "^8.0.1",
     "pg": "^8.16.3",
     "rate-limit-redis": "^4.3.1",
     "razorpay": "^2.9.6"
