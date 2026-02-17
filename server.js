@@ -53,6 +53,7 @@ const notificationsRoutes = require("./routes/notificationsRoutes");
 const volunteerApplicationsRoutes = require("./routes/volunteerApplicationsRoutes");
 const ngoHelpRoutes = require("./routes/ngoHelpRequestsRoutes");
 const appointmentsRoutes = require("./routes/appointmentsRoutes");
+const adminEmailRoutes = require("./routes/adminEmailRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -80,6 +81,7 @@ app.use("/notifications", notificationsRoutes);
 app.use("/volunteers", volunteerApplicationsRoutes);
 app.use("/ngo-help", ngoHelpRoutes);
 app.use("/appointments", appointmentsRoutes);
+app.use("/admin/emails", adminEmailRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

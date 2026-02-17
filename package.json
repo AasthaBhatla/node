@@ -27,6 +27,7 @@
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.2",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.1",
     "pg": "^8.16.3",
     "rate-limit-redis": "^4.3.1",
     "razorpay": "^2.9.6"
