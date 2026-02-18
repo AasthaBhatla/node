@@ -1,3 +1,4 @@
+// services/userService.js
 const pool = require("../db");
 
 const normalizePhone = (phone) => {
