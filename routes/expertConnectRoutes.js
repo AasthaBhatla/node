@@ -91,6 +91,32 @@ router.get(
   authMiddleware,
   requireRole("expert"),
   expertConnectController.getMyOffers,
-)
+);
+
+// Past sessions (completed requests)
+
+// 1) Client: my past sessions
+router.get(
+  "/client/me/sessions",
+  authMiddleware,
+  requireRole("client", { allowAdmin: false }),
+  expertConnectController.listMyClientSessions,
+);
+
+// 2) Expert: my past sessions
+router.get(
+  "/expert/me/sessions",
+  authMiddleware,
+  requireRole("expert", { allowAdmin: false }),
+  expertConnectController.listMyExpertSessions,
+);
+
+// 3) Admin: all sessions + filters
+router.get(
+  "/admin/sessions",
+  authMiddleware,
+  requireRole("admin", { allowAdmin: true }),
+  expertConnectController.adminListSessions,
+);
 
 module.exports = router;

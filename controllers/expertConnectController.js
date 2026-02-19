@@ -185,3 +185,99 @@ exports.getMyOffers = async (req, res) => {
     return handleError(res, err, "Get my expert offers error:");
   }
 };
+
+function parseYmdDate(value, fieldName) {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const err = new Error(`${fieldName} must be YYYY-MM-DD`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return s;
+}
+
+function parsePageLimit(q) {
+  const page = Math.max(1, parseInt(q.page || "1", 10));
+  const limitRaw = parseInt(q.limit || "20", 10);
+  const limit = Math.min(100, Math.max(1, limitRaw));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
+function parseOptionalId(value, fieldName) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    const err = new Error(`${fieldName} must be a positive integer`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return n;
+}
+
+exports.listMyClientSessions = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePageLimit(req.query);
+    const from = parseYmdDate(req.query.from, "from");
+    const to = parseYmdDate(req.query.to, "to");
+
+    const out = await expertConnectService.listSessionsForClient({
+      clientId: req.user.id,
+      page,
+      limit,
+      offset,
+      from,
+      to,
+    });
+
+    return res.status(200).json(out);
+  } catch (err) {
+    return handleError(res, err, "List client sessions error:");
+  }
+};
+
+exports.listMyExpertSessions = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePageLimit(req.query);
+    const from = parseYmdDate(req.query.from, "from");
+    const to = parseYmdDate(req.query.to, "to");
+
+    const out = await expertConnectService.listSessionsForExpert({
+      expertId: req.user.id,
+      page,
+      limit,
+      offset,
+      from,
+      to,
+    });
+
+    return res.status(200).json(out);
+  } catch (err) {
+    return handleError(res, err, "List expert sessions error:");
+  }
+};
+
+exports.adminListSessions = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePageLimit(req.query);
+    const from = parseYmdDate(req.query.from, "from");
+    const to = parseYmdDate(req.query.to, "to");
+
+    const expertId = parseOptionalId(req.query.expert_id, "expert_id");
+    const clientId = parseOptionalId(req.query.client_id, "client_id");
+
+    const out = await expertConnectService.listSessionsForAdmin({
+      page,
+      limit,
+      offset,
+      from,
+      to,
+      expertId,
+      clientId,
+    });
+
+    return res.status(200).json(out);
+  } catch (err) {
+    return handleError(res, err, "Admin list sessions error:");
+  }
+};

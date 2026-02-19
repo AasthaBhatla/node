@@ -1275,6 +1275,269 @@ async function getMyOffers({ expertId }) {
   }
 }
 
+async function fetchUserSummariesByIds(dbClient, ids = []) {
+  const clean = Array.from(
+    new Set(
+      (ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  );
+  if (!clean.length) return new Map();
+
+  const r = await dbClient.query(
+    `
+      SELECT
+        u.id,
+        u.email,
+        u.phone,
+        u.role,
+        COALESCE(
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'first_name' LIMIT 1),
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'name' LIMIT 1),
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'display_name' LIMIT 1)
+        ) AS name
+      FROM users u
+      WHERE u.id = ANY($1::int[])
+    `,
+    [clean],
+  );
+
+  const map = new Map();
+  for (const row of r.rows) map.set(Number(row.id), row);
+  return map;
+}
+
+function buildDateFilters({ from, to }, params) {
+  const clauses = [];
+
+  if (from) {
+    params.push(from);
+    clauses.push(`q.completed_at >= ($${params.length}::date)`);
+  }
+  if (to) {
+    params.push(to);
+    clauses.push(
+      `q.completed_at < (($${params.length}::date) + INTERVAL '1 day')`,
+    );
+  }
+
+  return clauses;
+}
+
+function paginateMeta({ page, limit, total }) {
+  const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / limit));
+  return { page, limit, total: Number(total) || 0, total_pages: totalPages };
+}
+
+function shapeSessionRow(row, clientMap, expertMap) {
+  const client = clientMap.get(Number(row.client_id)) || null;
+  const expert = row.expert_id
+    ? expertMap.get(Number(row.expert_id)) || null
+    : null;
+
+  return {
+    id: row.id,
+    status: row.status,
+
+    client_id: Number(row.client_id),
+    expert_id: row.expert_id ? Number(row.expert_id) : null,
+
+    created_at: row.created_at,
+    offered_at: row.offered_at,
+    assigned_at: row.assigned_at,
+    connected_at: row.connected_at,
+    completed_at: row.completed_at,
+
+    duration_seconds:
+      row.duration_seconds == null ? null : Number(row.duration_seconds),
+    time_to_assign_seconds:
+      row.time_to_assign_seconds == null
+        ? null
+        : Number(row.time_to_assign_seconds),
+
+    client,
+    expert,
+  };
+}
+
+async function listSessionsBase({ whereSql, params, page, limit, offset }) {
+  const dbClient = await pool.connect();
+
+  try {
+    // Count
+    const countRes = await dbClient.query(
+      `SELECT COUNT(*)::int AS total FROM expert_connection_queue q WHERE ${whereSql}`,
+      params,
+    );
+    const total = Number(countRes.rows[0]?.total || 0);
+
+    // Page
+    const pageParams = params.slice();
+    pageParams.push(limit);
+    pageParams.push(offset);
+
+    const rowsRes = await dbClient.query(
+      `
+        SELECT
+          q.*,
+          CASE
+            WHEN q.connected_at IS NOT NULL AND q.completed_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (q.completed_at - q.connected_at))::int
+            ELSE NULL
+          END AS duration_seconds,
+          CASE
+            WHEN q.assigned_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (q.assigned_at - q.created_at))::int
+            ELSE NULL
+          END AS time_to_assign_seconds
+        FROM expert_connection_queue q
+        WHERE ${whereSql}
+        ORDER BY q.completed_at DESC NULLS LAST, q.id DESC
+        LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}
+      `,
+      pageParams,
+    );
+
+    const rows = rowsRes.rows || [];
+    const clientIds = rows.map((r) => r.client_id);
+    const expertIds = rows.map((r) => r.expert_id).filter(Boolean);
+
+    const [clientMap, expertMap] = await Promise.all([
+      fetchUserSummariesByIds(dbClient, clientIds),
+      fetchUserSummariesByIds(dbClient, expertIds),
+    ]);
+
+    const sessions = rows.map((r) => shapeSessionRow(r, clientMap, expertMap));
+
+    return {
+      ...paginateMeta({ page, limit, total }),
+      sessions,
+    };
+  } finally {
+    dbClient.release();
+  }
+}
+
+// 1) Client: past sessions
+async function listSessionsForClient({
+  clientId,
+  page,
+  limit,
+  offset,
+  from,
+  to,
+}) {
+  const params = [];
+  const clauses = [
+    `q.status = $1`,
+    `q.completed_at IS NOT NULL`,
+    `q.client_id = $2`,
+  ];
+
+  params.push(STATUS.COMPLETED);
+  params.push(Number(clientId));
+
+  clauses.push(...buildDateFilters({ from, to }, params));
+
+  const whereSql = clauses.join(" AND ");
+
+  const out = await listSessionsBase({
+    whereSql,
+    params,
+    page,
+    limit,
+    offset,
+  });
+
+  return {
+    filters: { from: from || null, to: to || null },
+    ...out,
+  };
+}
+
+// 2) Expert: past sessions
+async function listSessionsForExpert({
+  expertId,
+  page,
+  limit,
+  offset,
+  from,
+  to,
+}) {
+  const params = [];
+  const clauses = [
+    `q.status = $1`,
+    `q.completed_at IS NOT NULL`,
+    `q.expert_id = $2`,
+  ];
+
+  params.push(STATUS.COMPLETED);
+  params.push(Number(expertId));
+
+  clauses.push(...buildDateFilters({ from, to }, params));
+
+  const whereSql = clauses.join(" AND ");
+
+  const out = await listSessionsBase({
+    whereSql,
+    params,
+    page,
+    limit,
+    offset,
+  });
+
+  return {
+    filters: { from: from || null, to: to || null },
+    ...out,
+  };
+}
+
+// 3) Admin: all sessions (+ optional expert/client filter)
+async function listSessionsForAdmin({
+  page,
+  limit,
+  offset,
+  from,
+  to,
+  expertId,
+  clientId,
+}) {
+  const params = [];
+  const clauses = [`q.status = $1`, `q.completed_at IS NOT NULL`];
+  params.push(STATUS.COMPLETED);
+
+  if (expertId) {
+    params.push(Number(expertId));
+    clauses.push(`q.expert_id = $${params.length}`);
+  }
+
+  if (clientId) {
+    params.push(Number(clientId));
+    clauses.push(`q.client_id = $${params.length}`);
+  }
+
+  clauses.push(...buildDateFilters({ from, to }, params));
+
+  const whereSql = clauses.join(" AND ");
+
+  const out = await listSessionsBase({
+    whereSql,
+    params,
+    page,
+    limit,
+    offset,
+  });
+
+  return {
+    filters: {
+      from: from || null,
+      to: to || null,
+      expert_id: expertId || null,
+      client_id: clientId || null,
+    },
+    ...out,
+  };
+}
+
 module.exports = {
   requestConnection,
   getRequestStatus,
@@ -1289,4 +1552,7 @@ module.exports = {
   getActiveRequestForExpert,
   getMyActiveRequest,
   getMyOffers,
+  listSessionsForClient,
+  listSessionsForExpert,
+  listSessionsForAdmin,
 };

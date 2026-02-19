@@ -160,4 +160,16 @@ CREATE INDEX IF NOT EXISTS expert_connection_queue_offered_idx
   ON expert_connection_queue(status, offered_at)
   WHERE status = 'offered';
 
+CREATE INDEX IF NOT EXISTS expert_conn_completed_at_idx
+  ON expert_connection_queue (completed_at DESC, id DESC)
+  WHERE status = 'completed' AND completed_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS expert_conn_client_completed_idx
+  ON expert_connection_queue (client_id, completed_at DESC, id DESC)
+  WHERE status = 'completed' AND completed_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS expert_conn_expert_completed_idx
+  ON expert_connection_queue (expert_id, completed_at DESC, id DESC)
+  WHERE status = 'completed' AND completed_at IS NOT NULL;
+
 COMMIT;
