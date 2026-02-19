@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
     "dev": "nodemon --legacy-watch --watch . --ext js,json --signal SIGTERM server.js",
-    "notif-worker": "node workers/notificationWorker.js"
+    "notif-worker": "node workers/notificationWorker.js",
+    "expert-connect-worker": "node workers/expertConnectWorker.js"
   },
   "keywords": [],
   "author": "",
