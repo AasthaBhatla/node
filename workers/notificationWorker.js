@@ -9,6 +9,9 @@ const {
 const { storeNotification } = require("../services/notificationStoreService");
 const emailService = require("../services/emailService");
 
+// ✅ NEW
+const notifPrefs = require("../services/notificationPrefsService");
+
 const BATCH_SIZE = parseInt(process.env.NOTIF_WORKER_BATCH || "10", 10);
 const MAX_ATTEMPTS = parseInt(process.env.NOTIF_MAX_ATTEMPTS || "5", 10);
 const POLL_MS = parseInt(process.env.NOTIF_WORKER_POLL_MS || "1500", 10);
@@ -29,7 +32,6 @@ async function getEmailsByUserIds(userIds = []) {
     [ids],
   );
 
-  // return array of {user_id, email}
   return rows
     .map((r) => ({
       user_id: r.id,
@@ -89,7 +91,6 @@ async function getUserIdsForTarget(target_type, target_value) {
     const parsed = ids.map((x) => parseInt(x, 10)).filter(Number.isFinite);
     if (!parsed.length) return [];
 
-    // ✅ keep only existing users to avoid FK errors
     const { rows } = await pool.query(
       `SELECT id FROM users WHERE id = ANY($1::int[])`,
       [parsed],
@@ -120,43 +121,103 @@ async function getUserIdsForTarget(target_type, target_value) {
   return [];
 }
 
-// Replace your existing processJob(job) with this complete corrected version.
 async function processJob(job) {
   const p = job.payload || {};
 
   const title = String(p.title || "").trim();
   const body = String(p.body || "").trim();
   const data = p.data && typeof p.data === "object" ? p.data : {};
-  const push = p.push !== false; // default true
-  const store = p.store !== false; // default true
+  const push = p.push !== false;
+  const store = p.store !== false;
   const channel = p.channel || "push";
   const email = p.email === true;
 
+  // ✅ NEW: bypass prefs for critical notifications
+  const force = p.force === true;
+
   if (!title || !body) throw new Error("Invalid payload: title/body required");
 
-  // Resolve targets → userIds (should already filter invalids if you patch getUserIdsForTarget,
-  // but we still guard here)
+  // Resolve targets → userIds
   let userIds = await getUserIdsForTarget(job.target_type, job.target_value);
   userIds = (Array.isArray(userIds) ? userIds : [])
     .map((x) => parseInt(x, 10))
     .filter(Number.isFinite);
 
   if (!userIds.length) {
-    // Nothing to do — treat as success so it doesn't retry forever
     return {
       ok: true,
-      users: 0,
+      users_total: 0,
+      users_allowed: 0,
+      users_skipped: 0,
       stored_ok: 0,
       stored_fail: 0,
       pushed_ok: 0,
       pushed_fail: 0,
+      emailed_ok: 0,
+      emailed_fail: 0,
     };
   }
 
-  // --- 1) STORE to inbox (never let one user failure kill the whole job) ---
+  // ✅ NEW: apply user notification prefs using event_key hierarchy
+  const users_total = userIds.length;
+  let users_skipped = 0;
+
+  if (!force) {
+    try {
+      const prefsMap = await notifPrefs.getPrefsMapByUserIds(userIds);
+
+      const allowed = [];
+      for (const uid of userIds) {
+        const prefs = prefsMap.get(uid); // missing => allowed
+        if (!prefs) {
+          allowed.push(uid);
+          continue;
+        }
+        if (prefs.pause_all === true) {
+          users_skipped++;
+          continue;
+        }
+        if (notifPrefs.isEventMuted(job.event_key, prefs.muted_scopes)) {
+          users_skipped++;
+          continue;
+        }
+        allowed.push(uid);
+      }
+
+      userIds = allowed;
+    } catch (err) {
+      // FAIL-OPEN: if prefs lookup fails, deliver as usual
+      console.error("⚠️ notif prefs check failed (fail-open):", {
+        job_id: job.id,
+        event_key: job.event_key,
+        message: err?.message || String(err),
+      });
+    }
+  }
+
+  const users_allowed = userIds.length;
+
+  // If everyone is muted, we consider job "successfully processed"
+  if (!userIds.length) {
+    return {
+      ok: true,
+      users_total,
+      users_allowed: 0,
+      users_skipped,
+      stored_ok: 0,
+      stored_fail: 0,
+      pushed_ok: 0,
+      pushed_fail: 0,
+      emailed_ok: 0,
+      emailed_fail: 0,
+      muted: true,
+    };
+  }
+
+  // --- 1) STORE ---
   let stored_ok = 0;
   let stored_fail = 0;
-  const store_errors = []; // keep small sample for debugging
+  const store_errors = [];
 
   if (store) {
     for (const uid of userIds) {
@@ -184,18 +245,18 @@ async function processJob(job) {
           message: err?.message,
           code: err?.code,
         });
-        // continue
       }
     }
   }
 
-  // --- 2) PUSH delivery (never let one chunk failure kill all chunks) ---
+  // --- 2) PUSH ---
   let pushed_ok = 0;
   let pushed_fail = 0;
   const push_errors = [];
 
   if (push) {
     try {
+      // ✅ Only fetch tokens for allowed users
       const tokens = await getTokensByUserIds(userIds);
 
       if (Array.isArray(tokens) && tokens.length) {
@@ -224,13 +285,11 @@ async function processJob(job) {
               message: err?.message,
               code: err?.code,
             });
-            // continue to next chunk
           }
         }
       }
     } catch (err) {
-      // token fetch failed — treat as push failure but do not fail store successes
-      pushed_fail = -1; // signal "push system failure"
+      pushed_fail = -1;
       if (push_errors.length < 10) {
         push_errors.push({
           message: err?.message || String(err),
@@ -245,13 +304,14 @@ async function processJob(job) {
     }
   }
 
-  // --- 3) EMAIL delivery (optional) ---
+  // --- 3) EMAIL ---
   let emailed_ok = 0;
   let emailed_fail = 0;
   const email_errors = [];
 
   if (email) {
     try {
+      // ✅ Only fetch emails for allowed users
       const targets = await getEmailsByUserIds(userIds);
 
       for (const t of targets) {
@@ -288,7 +348,7 @@ async function processJob(job) {
         }
       }
     } catch (err) {
-      emailed_fail = -1; // pipeline failure
+      emailed_fail = -1;
       if (email_errors.length < 10) {
         email_errors.push({
           message: err?.message || String(err),
@@ -303,12 +363,7 @@ async function processJob(job) {
     }
   }
 
-  /**
-   * IMPORTANT DECISION:
-   * - We DO NOT throw if some users fail — otherwise one bad user makes the whole job retry.
-   * - We only throw if NOTHING succeeded at all (neither store nor push), so retries still help
-   *   in transient infra issues.
-   */
+  // Success logic (same philosophy as your current code)
   const anyStoreSuccess = store ? stored_ok > 0 : false;
   const anyPushSuccess = push ? pushed_ok > 0 : false;
   const anyEmailSuccess = email ? emailed_ok > 0 : false;
@@ -319,37 +374,44 @@ async function processJob(job) {
     (email && anyEmailSuccess);
 
   if (!anySuccess) {
-    // If push was requested and token fetch/send completely failed and store also failed,
-    // then retry could help — throw to trigger retry.
     const reasonParts = [];
     if (store) reasonParts.push(`store_ok=0 store_fail=${stored_fail}`);
     if (push) reasonParts.push(`push_ok=${pushed_ok} push_fail=${pushed_fail}`);
+    if (email)
+      reasonParts.push(`email_ok=${emailed_ok} email_fail=${emailed_fail}`);
     const reason = reasonParts.join(" | ") || "no_success";
 
     const err = new Error(
       `Notification job produced no successful deliveries: ${reason}`,
     );
     err.details = {
+      users_total,
+      users_allowed,
+      users_skipped,
       stored_ok,
       stored_fail,
       pushed_ok,
       pushed_fail,
+      emailed_ok,
+      emailed_fail,
       store_errors,
       push_errors,
+      email_errors,
     };
     throw err;
   }
 
   return {
     ok: true,
-    users: userIds.length,
+    users_total,
+    users_allowed,
+    users_skipped,
     stored_ok,
     stored_fail,
     pushed_ok,
     pushed_fail,
     emailed_ok,
     emailed_fail,
-    // helpful for debugging; keep small
     ...(store_errors.length ? { store_errors } : {}),
     ...(push_errors.length ? { push_errors } : {}),
     ...(email_errors.length ? { email_errors } : {}),

@@ -44,4 +44,15 @@ router.delete(
   userController.unregisterDeviceToken,
 );
 
+router.get(
+  "/me/notification-prefs",
+  authMiddleware,
+  userController.getMyNotificationPrefs,
+);
+router.post(
+  "/me/notification-prefs",
+  authMiddleware,
+  userController.updateMyNotificationPrefs,
+);
+
 module.exports = router;

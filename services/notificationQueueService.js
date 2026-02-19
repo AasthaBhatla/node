@@ -1,4 +1,19 @@
+// services/notificationQueueService.js
 const pool = require("../db");
+
+// ✅ NEW: enqueue-time preference gating (for immediate jobs only)
+const notifPrefs = require("./notificationPrefsService");
+
+function toIntArray(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((x) => parseInt(x, 10))
+    .filter(Number.isFinite);
+}
+
+function uniqueInts(arr) {
+  const set = new Set(arr);
+  return Array.from(set);
+}
 
 async function enqueueJob({
   event_key,
@@ -7,6 +22,88 @@ async function enqueueJob({
   payload,
   run_at = null,
 }) {
+  // -----------------------------
+  // ✅ ENQUEUE-TIME PREF FILTERING
+  // Only for immediate jobs (run_at === null).
+  // Scheduled jobs must still be inserted so user can unmute later and receive them.
+  // Worker remains source-of-truth at delivery time.
+  // -----------------------------
+  try {
+    const force = payload?.force === true;
+
+    if (
+      !force &&
+      run_at === null &&
+      (target_type === "user" || target_type === "users")
+    ) {
+      let ids = [];
+
+      if (target_type === "user") {
+        const uid = parseInt(target_value?.user_id, 10);
+        if (Number.isFinite(uid)) ids = [uid];
+      } else {
+        ids = toIntArray(target_value?.user_ids);
+      }
+
+      ids = uniqueInts(ids);
+
+      if (ids.length) {
+        const prefsMap = await notifPrefs.getPrefsMapByUserIds(ids);
+
+        const allowedIds = ids.filter((uid) => {
+          const prefs = prefsMap.get(uid); // missing => allowed
+          if (!prefs) return true;
+          if (prefs.pause_all === true) return false;
+          if (notifPrefs.isEventMuted(event_key, prefs.muted_scopes))
+            return false;
+          return true;
+        });
+
+        if (target_type === "user") {
+          if (!allowedIds.length) {
+            // ✅ skip creating job
+            return {
+              id: null,
+              status: "skipped",
+              skipped: true,
+              skip_reason: "muted_by_user_prefs",
+              event_key,
+              target_type,
+              target_value: target_value || {},
+              payload: payload || {},
+              run_at: null,
+            };
+          }
+        } else {
+          // users target: shrink the user_ids list
+          if (!allowedIds.length) {
+            return {
+              id: null,
+              status: "skipped",
+              skipped: true,
+              skip_reason: "all_targets_muted_by_user_prefs",
+              event_key,
+              target_type,
+              target_value: target_value || {},
+              payload: payload || {},
+              run_at: null,
+            };
+          }
+
+          target_value = { ...(target_value || {}), user_ids: allowedIds };
+        }
+      }
+    }
+  } catch (err) {
+    // ✅ FAIL-OPEN: if prefs lookup fails, we still enqueue.
+    // Worker will still enforce prefs later.
+    console.error("⚠️ enqueue prefs check failed (fail-open):", {
+      event_key,
+      target_type,
+      message: err?.message || String(err),
+    });
+  }
+
   const { rows } = await pool.query(
     `
     INSERT INTO notification_jobs
@@ -49,7 +146,6 @@ async function cancelScheduledJobs({
   const params = [];
   let i = 0;
 
-  // status
   i += 1;
   params.push(status);
   where.push(`status = $${i}`);
@@ -80,14 +176,12 @@ async function cancelScheduledJobs({
     where.push(`event_key = ANY($${i}::text[])`);
   }
 
-  // data_equals
   for (const [k, v] of Object.entries(data_equals || {})) {
     i += 1;
     params.push(String(v));
     where.push(`(payload->'data'->>'${k}') = $${i}`);
   }
 
-  // data_in
   for (const [k, arr] of Object.entries(data_in || {})) {
     if (!Array.isArray(arr) || !arr.length) continue;
     i += 1;

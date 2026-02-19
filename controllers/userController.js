@@ -24,6 +24,7 @@ const {
   getUsersByIds,
   findUsersPublic,
 } = require("../services/userService");
+const notifPrefs = require("../services/notificationPrefsService");
 
 exports.getMe = async (req, res) => {
   const user_id = req.user.id;
@@ -511,5 +512,85 @@ exports.unregisterDeviceToken = async (req, res) => {
   } catch (err) {
     console.error("unregisterDeviceToken error:", err);
     return res.status(500).json({ error: "Failed to remove device token" });
+  }
+};
+
+exports.getMyNotificationPrefs = async (req, res) => {
+  try {
+    const userId = parseInt(req.user?.id, 10); // ✅ force number
+    if (!Number.isFinite(userId) || userId < 1) {
+      return res.status(400).json({
+        status: "failure",
+        body: { message: "Invalid user" },
+      });
+    }
+
+    const map = await notifPrefs.getPrefsMapByUserIds([userId]);
+
+    // ✅ MUST use numeric key
+    const prefs = map.get(userId) || { pause_all: false, muted_scopes: [] };
+
+    return res.status(200).json({
+      status: "success",
+      body: {
+        pause_all: prefs.pause_all === true,
+        muted_scopes: Array.isArray(prefs.muted_scopes)
+          ? prefs.muted_scopes
+          : [],
+      },
+    });
+  } catch (err) {
+    console.error("getMyNotificationPrefs error:", err);
+    return res.status(500).json({
+      status: "failure",
+      body: { message: err?.message || "Failed to read prefs" },
+    });
+  }
+};
+
+exports.updateMyNotificationPrefs = async (req, res) => {
+  try {
+    const userId = Number(req.user.id);
+
+    // Supports two styles:
+    // A) Full replace: { pause_all: true/false, muted_scopes: [...] }
+    // B) Toggle one scope: { scope: "appointments.reminder", muted: true/false }
+
+    const scope = typeof req.body.scope === "string" ? req.body.scope : null;
+    const mutedToggle =
+      typeof req.body.muted === "boolean" ? req.body.muted : null;
+
+    if (scope && mutedToggle !== null) {
+      const current = await notifPrefs.getPrefsMapByUserIds(userId);
+      const set = new Set((current.muted_scopes || []).map((s) => String(s)));
+      const sc = String(scope);
+
+      if (mutedToggle) set.add(sc);
+      else set.delete(sc);
+
+      const updated = await notifPrefs.setPrefs(userId, {
+        pause_all: current.pause_all === true,
+        muted_scopes: Array.from(set),
+      });
+
+      return res.status(200).json({ status: "success", body: updated });
+    }
+
+    const pause_all = req.body.pause_all === true;
+
+    const muted_scopes = Array.isArray(req.body.muted_scopes)
+      ? req.body.muted_scopes
+      : [];
+
+    const updated = await notifPrefs.setPrefs(userId, {
+      pause_all,
+      muted_scopes,
+    });
+
+    return res.status(200).json({ status: "success", body: updated });
+  } catch (e) {
+    return res
+      .status(400)
+      .json({ status: "failure", body: { message: e.message || "Error" } });
   }
 };

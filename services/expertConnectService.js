@@ -673,7 +673,7 @@ async function cancelRequest({ requestId, actorId, actorRole }) {
             store: false,
             email: false,
           },
-          "expert_connect.request.cancelled_by_client",
+          "expert.request.cancelled_by_client",
         );
       }
     } catch (e) {
@@ -931,7 +931,7 @@ async function completeRequest({ requestId, actorId, actorRole }) {
           store: true,
           email: true,
         },
-        "expert_connect.session.completed",
+        "expert.session.completed",
       );
     } catch (e) {
       console.error("notify client completed failed:", e?.message || e);
@@ -1197,7 +1197,7 @@ async function acceptOffer({ requestId, expertId }) {
           store: false,
           email: false,
         },
-        "expert_connect.offer.accepted",
+        "expert.offer.accepted",
       );
     } catch (e) {
       console.error("notify client accepted failed:", e?.message || e);

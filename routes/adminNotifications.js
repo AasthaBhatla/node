@@ -74,10 +74,31 @@ router.post("/user/:id", async (req, res) => {
     const userId = parseInt(req.params.id, 10);
     if (!Number.isFinite(userId)) return failure(res, "Invalid user id");
 
-    const job = await notify.user(userId, pickPayload(req), "admin.user");
-    return res
-      .status(200)
-      .json({ status: "success", body: { message: "Queued", job } });
+    const payload = pickPayload(req);
+
+    // Prefer explicit event_key, else use data.type, else fallback
+    const rawEventKey = String(req.body?.event_key || "").trim();
+    const rawType = String(payload?.data?.type || "").trim();
+
+    const chosen = rawEventKey || rawType || "admin.user";
+
+    // Normalize: "Marketing_Shopping" -> "marketing.shopping"
+    const eventKey = chosen
+      .toLowerCase()
+      .replace(/[\s_]+/g, ".")
+      .replace(/[^a-z0-9.]/g, "")
+      .replace(/\.+/g, ".")
+      .replace(/^\./, "")
+      .replace(/\.$/, "");
+
+    if (!eventKey) return failure(res, "Invalid event key/type");
+
+    const job = await notify.user(userId, payload, eventKey);
+
+    return res.status(200).json({
+      status: "success",
+      body: { message: "Queued", event_key: eventKey, job },
+    });
   } catch (err) {
     return failure(res, err?.message || "Failed to queue", 500);
   }

@@ -21,10 +21,13 @@ function normalizePayload(payload = {}) {
 
   const email = payload.email === true;
 
+  // ✅ bypass user preferences (for critical notifications only)
+  const force = payload.force === true;
+
   if (!title || !body)
     throw new Error("notify payload requires title and body");
 
-  return { title, body, data, push, store, channel, email };
+  return { title, body, data, push, store, channel, email, force };
 }
 
 function assertValidUserId(userId) {
@@ -34,6 +37,7 @@ function assertValidUserId(userId) {
   }
   return id;
 }
+
 /**
  * Parse run_at and store as UTC ISO string for consistency.
  *
@@ -51,15 +55,12 @@ function normalizeRunAt(run_at) {
   const s = run_at.trim();
   if (!s) throw new Error("run_at must be a non-empty string");
 
-  // If it includes a zone/offset (Z, +05:30), Luxon will honor it.
-  // If not, we assume DEFAULT_ZONE (Asia/Kolkata).
   let dt = DateTime.fromISO(s, { setZone: true });
   if (!dt.isValid) {
     dt = DateTime.fromISO(s, { zone: DEFAULT_ZONE });
   }
   if (!dt.isValid) throw new Error("run_at is not a valid ISO datetime");
 
-  // Store as UTC ISO for DB timestamp parsing consistency.
   return dt.toUTC().toISO();
 }
 
@@ -128,9 +129,6 @@ async function all(payload, event_key = "custom.all") {
 
 /**
  * SCHEDULED: one user at a specific time
- *
- * Signature kept consistent with your current style:
- *   userAt(userId, payload, run_at, event_key?)
  */
 async function userAt(
   userId,
@@ -151,7 +149,7 @@ async function userAt(
 }
 
 /**
- * OPTIONAL (but handy): scheduled many users
+ * OPTIONAL: scheduled many users
  */
 async function usersAt(
   userIds = [],
@@ -176,9 +174,6 @@ async function usersAt(
   });
 }
 
-/**
- * OPTIONAL: scheduled role
- */
 async function roleAt(
   role,
   payload,
@@ -201,9 +196,6 @@ async function roleAt(
   });
 }
 
-/**
- * OPTIONAL: scheduled broadcast
- */
 async function allAt(payload, run_at, event_key = "custom.all.scheduled") {
   const runAtUtcIso = normalizeRunAt(run_at);
 
@@ -215,10 +207,11 @@ async function allAt(payload, run_at, event_key = "custom.all.scheduled") {
     run_at: runAtUtcIso,
   });
 }
+
 async function cancelScheduled(filter, event_key = "custom.cancel.scheduled") {
-  // event_key is just for your logs/consistency; not stored unless you want
   return cancelScheduledJobs(filter);
 }
+
 module.exports = {
   user,
   users,
