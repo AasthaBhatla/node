@@ -1,3 +1,4 @@
+// worker/notificationWorker.js
 require("dotenv").config();
 const pool = require("../db");
 const { sendToTokens, sendToTopic } = require("../services/fcm");
