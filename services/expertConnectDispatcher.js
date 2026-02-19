@@ -333,7 +333,7 @@ async function dispatchOneOffer() {
             store: false,
             email: false,
           },
-          "expert_connect.offer.created",
+          "expert.connect.offer.created",
         );
       }
     } catch (e) {

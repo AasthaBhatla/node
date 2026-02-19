@@ -62,7 +62,7 @@ async function apply(req, res) {
         store: true,
         email: true,
       },
-      "ngo.volunteer_application.created",
+      "ngo.volunteer.application.created",
     );
   } catch (e) {
     console.error("Notify NGO (volunteer apply) failed:", e.message || e);
@@ -168,7 +168,7 @@ async function ngoDecide(req, res) {
         push: true,
         store: true,
       },
-      "ngo.volunteer_application.decided",
+      "ngo.volunteer.application.decided",
     );
   } catch (e) {
     console.error(

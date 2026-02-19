@@ -673,7 +673,7 @@ async function cancelRequest({ requestId, actorId, actorRole }) {
             store: false,
             email: false,
           },
-          "expert.request.cancelled_by_client",
+          "expert.request.cancelled.by.client",
         );
       }
     } catch (e) {

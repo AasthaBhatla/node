@@ -379,7 +379,7 @@ exports.cancelAsClient = async (req, res) => {
           push: true,
           store: true,
         },
-        "appointments.cancelled.by_client",
+        "appointments.cancelled.by.client",
       );
     } catch (e) {
       console.error(
@@ -527,7 +527,7 @@ exports.cancelAsPartner = async (req, res) => {
           push: true,
           store: true,
         },
-        "appointments.cancelled.by_partner",
+        "appointments.cancelled.by.partner",
       );
     } catch (e) {
       console.error(

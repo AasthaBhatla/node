@@ -60,7 +60,7 @@ async function apply(req, res) {
         push: true,
         store: true,
       },
-      "ngo.help_request.created",
+      "ngo.help.request.created",
     );
   } catch (e) {
     // Don’t fail the API if notification fails
@@ -180,7 +180,7 @@ async function ngoDecide(req, res) {
         push: true,
         store: true,
       },
-      "ngo.help_request.decided",
+      "ngo.help.request.decided",
     );
   } catch (e) {
     console.error("Notify client failed:", e.message || e);
