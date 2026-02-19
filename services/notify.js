@@ -27,6 +27,13 @@ function normalizePayload(payload = {}) {
   return { title, body, data, push, store, channel, email };
 }
 
+function assertValidUserId(userId) {
+  const id = Number(userId);
+  if (!Number.isInteger(id) || id < 1) {
+    throw new Error(`notify.user requires a valid userId, got: ${userId}`);
+  }
+  return id;
+}
 /**
  * Parse run_at and store as UTC ISO string for consistency.
  *
@@ -131,12 +138,13 @@ async function userAt(
   run_at,
   event_key = "custom.user.scheduled",
 ) {
+  const uid = assertValidUserId(userId);
   const runAtUtcIso = normalizeRunAt(run_at);
 
   return enqueueJob({
     event_key,
     target_type: "user",
-    target_value: { user_id: Number(userId) },
+    target_value: { user_id: uid },
     payload: normalizePayload(payload),
     run_at: runAtUtcIso,
   });
