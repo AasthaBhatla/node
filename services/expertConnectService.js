@@ -51,6 +51,43 @@ function normalizeRole(role) {
     .trim();
 }
 
+async function fetchWalletSessionsByIds(dbClient, sessionIds = []) {
+  const clean = Array.from(
+    new Set(
+      (sessionIds || [])
+        .map((x) => Number(x))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  );
+
+  if (!clean.length) return new Map();
+
+  const r = await dbClient.query(
+    `
+      SELECT
+        session_id,
+        user_id,
+        partner_id,
+        session_type,
+        status,
+        rate_credits_per_min,
+        started_at,
+        ended_at,
+        ended_reason,
+        total_minutes_billed,
+        total_credits_billed,
+        metadata
+      FROM sessions
+      WHERE session_id = ANY($1::bigint[])
+    `,
+    [clean],
+  );
+
+  const map = new Map();
+  for (const row of r.rows) map.set(Number(row.session_id), row);
+  return map;
+}
+
 async function ensureExpertsInAvailability(client) {
   await client.query(
     `
@@ -251,8 +288,15 @@ async function serializeRequest(client, row) {
   const expert = row.expert_id
     ? await getExpertSummary(row.expert_id, client)
     : null;
+
   const clientUser = row.client_id
     ? await getClientSummary(row.client_id, client)
+    : null;
+
+  const walletSessionId = row.wallet_session_id ?? row.session_id ?? null;
+
+  const wallet_session = walletSessionId
+    ? await getWalletSessionSummary(client, walletSessionId)
     : null;
 
   return {
@@ -262,10 +306,17 @@ async function serializeRequest(client, row) {
     expert,
     client: clientUser,
 
-    // frontend hint: when should we allow LiveKit UI to show?
-    can_start_connect_flow: [STATUS.ASSIGNED, STATUS.CONNECTED].includes(
-      row.status,
-    ),
+    wallet_session,
+
+    actual_connected_at:
+      wallet_session?.started_at || row.connected_at || row.assigned_at || null,
+
+    expert_earned_credits:
+      wallet_session?.total_credits_billed != null
+        ? Number(wallet_session.total_credits_billed)
+        : null,
+
+    can_start_connect_flow: ["assigned", "connected"].includes(row.status),
   };
 }
 
@@ -742,7 +793,12 @@ async function setExpertOnlineStatus({
   }
 }
 
-async function markConnected({ requestId, actorId, actorRole }) {
+async function markConnected({
+  requestId,
+  actorId,
+  actorRole,
+  sessionId = null,
+}) {
   const dbClient = await pool.connect();
 
   try {
@@ -757,27 +813,41 @@ async function markConnected({ requestId, actorId, actorRole }) {
 
     assertRequestAccess(row, actorId, actorRole);
 
-    if (row.status === "connected") {
+    // already terminal => just return
+    if (STATUS_GROUPS.TERMINAL.includes(row.status)) {
       const payload = await serializeRequest(dbClient, row);
       await dbClient.query("COMMIT");
       return payload;
     }
 
-    if (row.status !== "assigned") {
+    // only assigned/connected can be marked connected
+    if (!["assigned", "connected"].includes(row.status)) {
       throw httpError("Only assigned requests can be marked connected", 409);
+    }
+
+    // If sessionId provided, validate and link (idempotent)
+    if (sessionId != null) {
+      const sid = Number(sessionId);
+
+      if (row.wallet_session_id && Number(row.wallet_session_id) !== sid) {
+        throw httpError("Request already linked to a different session", 409);
+      }
+
+      await assertSessionMatchesRequestTx(dbClient, row, sid);
     }
 
     const updated = await dbClient.query(
       `
         UPDATE expert_connection_queue
         SET
-          status = 'connected',
-          connected_at = CURRENT_TIMESTAMP,
+          status = CASE WHEN status = 'assigned' THEN 'connected' ELSE status END,
+          connected_at = COALESCE(connected_at, CURRENT_TIMESTAMP),
+          wallet_session_id = COALESCE(wallet_session_id, $2),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
         RETURNING *
       `,
-      [requestId],
+      [requestId, sessionId != null ? Number(sessionId) : null],
     );
 
     const payload = await serializeRequest(dbClient, updated.rows[0]);
@@ -1328,10 +1398,22 @@ function paginateMeta({ page, limit, total }) {
   return { page, limit, total: Number(total) || 0, total_pages: totalPages };
 }
 
-function shapeSessionRow(row, clientMap, expertMap) {
+function shapeSessionRow(row, clientMap, expertMap, walletMap) {
   const client = clientMap.get(Number(row.client_id)) || null;
   const expert = row.expert_id
     ? expertMap.get(Number(row.expert_id)) || null
+    : null;
+
+  // ✅ canonical column (fallback to legacy session_id if it exists anywhere)
+  const walletSessionId =
+    row.wallet_session_id != null
+      ? Number(row.wallet_session_id)
+      : row.session_id != null
+        ? Number(row.session_id)
+        : null;
+
+  const wallet_session = walletSessionId
+    ? walletMap.get(walletSessionId) || null
     : null;
 
   return {
@@ -1356,6 +1438,17 @@ function shapeSessionRow(row, clientMap, expertMap) {
 
     client,
     expert,
+
+    // ✅ what you wanted
+    wallet_session,
+
+    actual_connected_at:
+      wallet_session?.started_at || row.connected_at || row.assigned_at || null,
+
+    expert_earned_credits:
+      wallet_session?.total_credits_billed != null
+        ? Number(wallet_session.total_credits_billed)
+        : null,
   };
 }
 
@@ -1363,14 +1456,12 @@ async function listSessionsBase({ whereSql, params, page, limit, offset }) {
   const dbClient = await pool.connect();
 
   try {
-    // Count
     const countRes = await dbClient.query(
       `SELECT COUNT(*)::int AS total FROM expert_connection_queue q WHERE ${whereSql}`,
       params,
     );
     const total = Number(countRes.rows[0]?.total || 0);
 
-    // Page
     const pageParams = params.slice();
     pageParams.push(limit);
     pageParams.push(offset);
@@ -1401,12 +1492,20 @@ async function listSessionsBase({ whereSql, params, page, limit, offset }) {
     const clientIds = rows.map((r) => r.client_id);
     const expertIds = rows.map((r) => r.expert_id).filter(Boolean);
 
-    const [clientMap, expertMap] = await Promise.all([
+    // ✅ collect wallet_session_id values
+    const walletSessionIds = rows
+      .map((r) => r.wallet_session_id ?? r.session_id)
+      .filter(Boolean);
+
+    const [clientMap, expertMap, walletMap] = await Promise.all([
       fetchUserSummariesByIds(dbClient, clientIds),
       fetchUserSummariesByIds(dbClient, expertIds),
+      fetchWalletSessionsByIds(dbClient, walletSessionIds),
     ]);
 
-    const sessions = rows.map((r) => shapeSessionRow(r, clientMap, expertMap));
+    const sessions = rows.map((r) =>
+      shapeSessionRow(r, clientMap, expertMap, walletMap),
+    );
 
     return {
       ...paginateMeta({ page, limit, total }),
@@ -1538,6 +1637,208 @@ async function listSessionsForAdmin({
   };
 }
 
+async function getWalletSessionSummary(dbClient, sessionId) {
+  if (!sessionId) return null;
+
+  const r = await dbClient.query(
+    `
+      SELECT
+        session_id,
+        user_id,
+        partner_id,
+        session_type,
+        status,
+        rate_credits_per_min,
+        started_at,
+        ended_at,
+        ended_reason,
+        total_minutes_billed,
+        total_credits_billed,
+        metadata
+      FROM sessions
+      WHERE session_id = $1
+      LIMIT 1
+    `,
+    [Number(sessionId)],
+  );
+
+  return r.rows[0] || null;
+}
+
+async function linkWalletSessionToRequest({
+  requestId,
+  sessionId,
+  actorId,
+  actorRole,
+}) {
+  const rid = Number(requestId);
+  const sid = Number(sessionId);
+
+  if (!Number.isInteger(rid) || rid <= 0)
+    throw httpError("Invalid requestId", 400);
+  if (!Number.isInteger(sid) || sid <= 0)
+    throw httpError("Invalid sessionId", 400);
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+
+    // Lock request
+    const q = await dbClient.query(
+      `SELECT * FROM expert_connection_queue WHERE id = $1 FOR UPDATE`,
+      [rid],
+    );
+    const row = q.rows[0];
+    if (!row) throw httpError("Connection request not found", 404);
+
+    assertRequestAccess(row, actorId, actorRole);
+
+    // Only meaningful when request is already assigned/connected/completed
+    if (!["assigned", "connected", "completed"].includes(row.status)) {
+      throw httpError(
+        "Request must be assigned/connected to link session",
+        409,
+      );
+    }
+
+    // Lock session
+    const sRes = await dbClient.query(
+      `SELECT * FROM sessions WHERE session_id = $1 FOR UPDATE`,
+      [sid],
+    );
+    const session = sRes.rows[0];
+    if (!session) throw httpError("Session not found", 404);
+
+    // ✅ Enforce correct pair:
+    // session.user_id = client, session.partner_id = expert
+    if (Number(session.user_id) !== Number(row.client_id)) {
+      throw httpError("Session does not belong to this client", 409);
+    }
+    if (
+      !row.expert_id ||
+      Number(session.partner_id) !== Number(row.expert_id)
+    ) {
+      throw httpError("Session partner_id does not match request expert", 409);
+    }
+
+    // Idempotent: if already linked, only allow same session
+    if (row.wallet_session_id && Number(row.wallet_session_id) !== sid) {
+      throw httpError("Request already linked to a different session", 409);
+    }
+
+    const upd = await dbClient.query(
+      `
+        UPDATE expert_connection_queue
+        SET
+          wallet_session_id = $2,
+          -- optional: ensure connected_at exists (but do NOT change status)
+          connected_at = COALESCE(connected_at, NOW()),
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `,
+      [rid, sid],
+    );
+
+    const payload = await serializeRequest(dbClient, upd.rows[0]);
+    await dbClient.query("COMMIT");
+    return { request: payload };
+  } catch (err) {
+    await dbClient.query("ROLLBACK");
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+}
+
+async function reconcileEndedWalletSessions({ batch = 50 } = {}) {
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+
+    // Find active requests linked to sessions that ended
+    const r = await dbClient.query(
+      `
+      SELECT q.id, q.expert_id, q.wallet_session_id, s.ended_at
+      FROM expert_connection_queue q
+      JOIN sessions s ON s.session_id = q.wallet_session_id
+      WHERE q.status IN ('assigned', 'connected')
+        AND q.wallet_session_id IS NOT NULL
+        AND s.status = 'ended'
+      ORDER BY s.ended_at ASC NULLS LAST, q.id ASC
+      LIMIT $1
+      FOR UPDATE OF q SKIP LOCKED
+      `,
+      [batch],
+    );
+
+    for (const row of r.rows) {
+      // mark completed
+      await dbClient.query(
+        `
+        UPDATE expert_connection_queue
+        SET
+          status = 'completed',
+          completed_at = COALESCE($2, NOW()),
+          offered_at = NULL,
+          offer_expires_at = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+          AND status IN ('assigned', 'connected')
+        `,
+        [row.id, row.ended_at],
+      );
+
+      if (row.expert_id) {
+        await decrementExpertLoad(dbClient, row.expert_id);
+      }
+    }
+
+    await dbClient.query("COMMIT");
+    return { processed: r.rows.length };
+  } catch (err) {
+    await dbClient.query("ROLLBACK");
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+}
+
+async function assertSessionMatchesRequestTx(dbClient, requestRow, sessionId) {
+  const sid = Number(sessionId);
+  if (!Number.isInteger(sid) || sid <= 0)
+    throw httpError("Invalid session_id", 400);
+
+  const sRes = await dbClient.query(
+    `
+      SELECT
+        session_id, user_id, partner_id, status,
+        started_at, ended_at,
+        total_minutes_billed, total_credits_billed
+      FROM sessions
+      WHERE session_id = $1
+      LIMIT 1
+    `,
+    [sid],
+  );
+
+  const session = sRes.rows[0];
+  if (!session) throw httpError("Session not found", 404);
+
+  // session.user_id must be the client; session.partner_id must be the expert
+  if (Number(session.user_id) !== Number(requestRow.client_id)) {
+    throw httpError("session.user_id does not match request client_id", 409);
+  }
+  if (
+    !requestRow.expert_id ||
+    Number(session.partner_id) !== Number(requestRow.expert_id)
+  ) {
+    throw httpError("session.partner_id does not match request expert_id", 409);
+  }
+
+  return session;
+}
+
 module.exports = {
   requestConnection,
   getRequestStatus,
@@ -1555,4 +1856,7 @@ module.exports = {
   listSessionsForClient,
   listSessionsForExpert,
   listSessionsForAdmin,
+  getWalletSessionSummary,
+  linkWalletSessionToRequest,
+  reconcileEndedWalletSessions,
 };

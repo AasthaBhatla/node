@@ -83,17 +83,25 @@ exports.updateMyOnlineStatus = async (req, res) => {
 
 exports.markConnected = async (req, res) => {
   try {
+    const actorId = req.user?.id;
+    const actorRole = req.user?.role;
+
     const requestId = parseId(req.params.id, "id");
 
-    const out = await expertConnectService.markConnected({
+    const sessionIdRaw = req.body?.session_id;
+    const sessionId = sessionIdRaw == null ? null : parseInt(sessionIdRaw, 10);
+
+    const request = await expertConnectService.markConnected({
       requestId,
-      actorId: req.user.id,
-      actorRole: req.user.role,
+      actorId,
+      actorRole,
+      sessionId:
+        sessionId == null || Number.isNaN(sessionId) ? null : sessionId,
     });
 
-    return res.status(200).json(out);
+    return res.status(200).json({ request });
   } catch (err) {
-    return handleError(res, err, "Mark expert connection as connected error:");
+    return handleError(res, err, "Mark connected error:");
   }
 };
 
@@ -279,5 +287,26 @@ exports.adminListSessions = async (req, res) => {
     return res.status(200).json(out);
   } catch (err) {
     return handleError(res, err, "Admin list sessions error:");
+  }
+};
+
+exports.linkSession = async (req, res) => {
+  try {
+    const actorId = req.user?.id;
+    const actorRole = req.user?.role;
+
+    const requestId = parseInt(req.params.request_id, 10);
+    const sessionId = parseInt(req.body?.session_id, 10);
+
+    const data = await expertConnectService.linkWalletSessionToRequest({
+      requestId,
+      sessionId,
+      actorId,
+      actorRole,
+    });
+
+    return success(res, data);
+  } catch (err) {
+    return failure(res, err.message || "Error", err.statusCode || 400);
   }
 };

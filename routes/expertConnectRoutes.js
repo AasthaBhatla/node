@@ -86,13 +86,6 @@ router.get(
   expertConnectController.getMyActiveRequest,
 );
 
-router.get(
-  "/expert/me/offers",
-  authMiddleware,
-  requireRole("expert"),
-  expertConnectController.getMyOffers,
-);
-
 // Past sessions (completed requests)
 
 // 1) Client: my past sessions

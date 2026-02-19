@@ -5,7 +5,17 @@ const notify = require("./notify");
 const OFFER_TTL_SECONDS = Number(
   process.env.EXPERT_CONNECT_OFFER_TTL_SECONDS || 30,
 );
+
 const DISPATCH_CHANNEL = "expert_connect_kick";
+
+// Batches (defaults are safe)
+const DISPATCH_BATCH = Number(process.env.EXPERT_CONNECT_DISPATCH_BATCH || 10);
+const EXPIRE_BATCH = Number(process.env.EXPERT_CONNECT_EXPIRE_BATCH || 50);
+
+// New: reconcile ended sessions in batches (falls back to EXPIRE_BATCH if not set)
+const RECONCILE_BATCH = Number(
+  process.env.EXPERT_CONNECT_RECONCILE_BATCH || EXPIRE_BATCH || 50,
+);
 
 function normalizeRoleSql() {
   // keep consistent role checks (trim avoids whitespace issues)
@@ -103,6 +113,98 @@ async function expireOffersBatch(limit = 50) {
 
     await client.query("COMMIT");
     return { expired_count: expired.rowCount };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ✅ Reconcile ended WALLET sessions:
+ * If a wallet session is ended, but expert_connection_queue is still assigned/connected,
+ * mark it completed AND decrement expert load.
+ *
+ * ASSUMPTION:
+ *   expert_connection_queue has a nullable column:
+ *     session_id BIGINT REFERENCES sessions(session_id)
+ *
+ * No changes to sessions/wallet required.
+ */
+async function reconcileEndedWalletSessions(limit = 50) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Ensure availability rows exist (so decrement won't "miss" because row absent)
+    await ensureExpertsInAvailability(client);
+
+    // 1) Find active expert-connect rows whose linked wallet session has ended
+    // 2) Mark them completed (once) using SKIP LOCKED
+    const completed = await client.query(
+      `
+      WITH target AS (
+        SELECT
+          q.id,
+          q.expert_id,
+          COALESCE(s.ended_at, NOW()) AS ended_at
+        FROM expert_connection_queue q
+        JOIN sessions s ON s.session_id = q.session_id
+        WHERE q.status IN ('assigned', 'connected')
+          AND q.session_id IS NOT NULL
+          AND s.status = 'ended'
+        ORDER BY COALESCE(s.ended_at, NOW()) ASC, q.id ASC
+        FOR UPDATE OF q SKIP LOCKED
+        LIMIT $1
+      ),
+      updated AS (
+        UPDATE expert_connection_queue q
+        SET
+          status = 'completed',
+          completed_at = t.ended_at,
+          -- cleanup any stale offer timers
+          offered_at = NULL,
+          offer_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        FROM target t
+        WHERE q.id = t.id
+        RETURNING q.id, q.expert_id
+      )
+      SELECT * FROM updated
+      `,
+      [limit],
+    );
+
+    const rows = completed.rows || [];
+    if (rows.length) {
+      // Decrement load per expert by count of reconciled requests
+      await client.query(
+        `
+        WITH dec AS (
+          SELECT expert_id, COUNT(*)::INT AS cnt
+          FROM (SELECT expert_id FROM (VALUES ${rows
+            .map((_, i) => `($${i + 1}::int)`)
+            .join(", ")}) v(expert_id)) x
+          WHERE expert_id IS NOT NULL
+          GROUP BY expert_id
+        )
+        UPDATE expert_availability ea
+        SET
+          current_active_clients = GREATEST(ea.current_active_clients - dec.cnt, 0),
+          updated_at = CURRENT_TIMESTAMP
+        FROM dec
+        WHERE ea.expert_id = dec.expert_id
+        `,
+        rows
+          .map((r) => (r.expert_id ? Number(r.expert_id) : null))
+          .filter((x) => Number.isInteger(x) && x > 0),
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return { reconciled_count: rows.length };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -271,9 +373,34 @@ async function dispatchOffersBatch(maxOffers = 10) {
   return { offered_count: offeredCount };
 }
 
+/**
+ * ✅ Run ONE full cycle (call this from your worker tick / kick handler)
+ * Order matters:
+ *  1) expire offers
+ *  2) reconcile ended wallet sessions (frees capacity)
+ *  3) dispatch new offers
+ */
+async function runDispatcherCycle({
+  expireLimit = EXPIRE_BATCH,
+  reconcileLimit = RECONCILE_BATCH,
+  maxOffers = DISPATCH_BATCH,
+} = {}) {
+  const expired = await expireOffersBatch(expireLimit);
+  const reconciled = await reconcileEndedWalletSessions(reconcileLimit);
+  const offered = await dispatchOffersBatch(maxOffers);
+
+  return {
+    expired,
+    reconciled,
+    offered,
+  };
+}
+
 module.exports = {
   kickDispatcher,
   expireOffersBatch,
+  reconcileEndedWalletSessions,
   dispatchOffersBatch,
+  runDispatcherCycle,
   DISPATCH_CHANNEL,
 };

@@ -172,4 +172,51 @@ CREATE INDEX IF NOT EXISTS expert_conn_expert_completed_idx
   ON expert_connection_queue (expert_id, completed_at DESC, id DESC)
   WHERE status = 'completed' AND completed_at IS NOT NULL;
 
+-- Add session link to expert connect
+ALTER TABLE expert_connection_queue
+  ADD COLUMN IF NOT EXISTS wallet_session_id BIGINT;
+
+-- FK to sessions (safe add)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_expert_connection_queue_wallet_session'
+  ) THEN
+    ALTER TABLE expert_connection_queue
+      ADD CONSTRAINT fk_expert_connection_queue_wallet_session
+      FOREIGN KEY (wallet_session_id)
+      REFERENCES sessions(session_id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS expert_connection_queue_wallet_session_idx
+  ON expert_connection_queue(wallet_session_id);
+
+-- Helpful for history listing
+CREATE INDEX IF NOT EXISTS expert_connection_queue_client_completed_idx
+  ON expert_connection_queue(client_id, completed_at DESC, id DESC)
+  WHERE status = 'completed';
+
+CREATE INDEX IF NOT EXISTS expert_connection_queue_expert_completed_idx
+  ON expert_connection_queue(expert_id, completed_at DESC, id DESC)
+  WHERE status = 'completed';
+
+ALTER TABLE expert_connection_queue
+ADD COLUMN IF NOT EXISTS session_id BIGINT REFERENCES sessions(session_id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS expert_connection_queue_session_id_idx
+  ON expert_connection_queue(session_id);
+
+-- If any legacy code wrote into session_id, keep data by copying it into wallet_session_id
+UPDATE expert_connection_queue
+SET wallet_session_id = session_id
+WHERE wallet_session_id IS NULL
+  AND session_id IS NOT NULL;
+
+-- Drop session_id (drops its FK and index automatically)
+ALTER TABLE expert_connection_queue
+  DROP COLUMN IF EXISTS session_id;
+
 COMMIT;
