@@ -4,15 +4,40 @@ const notify = require("./notify");
 const { kickDispatcher } = require("./expertConnectDispatcher");
 
 const AVG_SESSION_SECONDS = 10 * 60;
-const OFFER_TTL_SECONDS = 30; // expert must accept within 30s (tune later)
-const ACTIVE_REQUEST_STATUSES_FOR_CLIENT = [
-  "queued",
-  "offered",
-  "assigned",
-  "connected",
-];
-const ACTIVE_REQUEST_STATUSES_FOR_EXPERT = ["offered", "assigned", "connected"];
-const TERMINAL_STATUSES = ["cancelled", "timed_out", "completed"];
+
+// If you already have env vars for TTL, do this:
+const OFFER_TTL_SECONDS = Number(
+  process.env.EXPERT_CONNECT_OFFER_TTL_SECONDS || 30,
+);
+
+const STATUS = Object.freeze({
+  QUEUED: "queued",
+  OFFERED: "offered",
+  ASSIGNED: "assigned",
+  CONNECTED: "connected",
+  CANCELLED: "cancelled",
+  TIMED_OUT: "timed_out",
+  COMPLETED: "completed",
+});
+
+const STATUS_GROUPS = Object.freeze({
+  ACTIVE_CLIENT: Object.freeze([
+    STATUS.QUEUED,
+    STATUS.OFFERED,
+    STATUS.ASSIGNED,
+    STATUS.CONNECTED,
+  ]),
+  ACTIVE_EXPERT: Object.freeze([
+    STATUS.OFFERED,
+    STATUS.ASSIGNED,
+    STATUS.CONNECTED,
+  ]),
+  TERMINAL: Object.freeze([
+    STATUS.CANCELLED,
+    STATUS.TIMED_OUT,
+    STATUS.COMPLETED,
+  ]),
+});
 
 function httpError(message, statusCode = 400) {
   const err = new Error(message);
@@ -168,6 +193,31 @@ async function getExpertSummary(expertId, db = pool) {
   return result.rows[0] || null;
 }
 
+async function getClientSummary(clientId, db = pool) {
+  if (!clientId) return null;
+
+  const result = await db.query(
+    `
+      SELECT
+        u.id,
+        u.email,
+        u.phone,
+        u.role,
+        COALESCE(
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'first_name' LIMIT 1),
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'name' LIMIT 1),
+          (SELECT value FROM user_metadata WHERE user_id = u.id AND key = 'display_name' LIMIT 1)
+        ) AS name
+      FROM users u
+      WHERE u.id = $1
+      LIMIT 1
+    `,
+    [clientId],
+  );
+
+  return result.rows[0] || null;
+}
+
 async function getActiveRequestForClient(client, clientId) {
   const result = await client.query(
     `
@@ -178,7 +228,7 @@ async function getActiveRequestForClient(client, clientId) {
       ORDER BY created_at DESC, id DESC
       LIMIT 1
     `,
-    [clientId, ACTIVE_REQUEST_STATUSES_FOR_CLIENT],
+    [clientId, STATUS_GROUPS.ACTIVE_CLIENT],
   );
 
   return result.rows[0] || null;
@@ -201,12 +251,21 @@ async function serializeRequest(client, row) {
   const expert = row.expert_id
     ? await getExpertSummary(row.expert_id, client)
     : null;
+  const clientUser = row.client_id
+    ? await getClientSummary(row.client_id, client)
+    : null;
 
   return {
     ...row,
     position,
     estimated_wait_seconds: estimatedWait,
     expert,
+    client: clientUser,
+
+    // frontend hint: when should we allow LiveKit UI to show?
+    can_start_connect_flow: [STATUS.ASSIGNED, STATUS.CONNECTED].includes(
+      row.status,
+    ),
   };
 }
 
@@ -336,7 +395,7 @@ async function requestConnection(clientId) {
       await dbClient.query("COMMIT");
 
       // If it's queued, kick dispatcher so it tries to offer quickly
-      if (existing.status === "queued") {
+      if (existing.status === STATUS.QUEUED) {
         kickDispatcher().catch(() => {});
       }
 
@@ -408,7 +467,7 @@ async function requestConnection(clientId) {
           ORDER BY created_at DESC, id DESC
           LIMIT 1
         `,
-        [clientId, ACTIVE_REQUEST_STATUSES_FOR_CLIENT],
+        [clientId, STATUS_GROUPS.ACTIVE_CLIENT],
       );
 
       if (existing.rows[0]) {
@@ -505,7 +564,7 @@ async function cancelRequest({ requestId, actorId, actorRole }) {
       throw httpError("Access denied", 403);
     }
 
-    if (TERMINAL_STATUSES.includes(row.status)) {
+    if (STATUS_GROUPS.TERMINAL.includes(row.status)) {
       const payload = await serializeRequest(dbClient, row);
       await dbClient.query("COMMIT");
       return { request: payload, auto_assigned_requests: [] };
@@ -673,12 +732,7 @@ async function setExpertOnlineStatus({
     kickDispatcher().catch(() => {});
     return {
       availability: availabilityRow,
-      auto_assigned_requests: autoAssigned.map((item) => ({
-        id: item.id,
-        client_id: item.client_id,
-        expert_id: item.expert_id,
-        status: item.status,
-      })),
+      auto_assigned_requests: [],
     };
   } catch (err) {
     await dbClient.query("ROLLBACK");
@@ -752,7 +806,7 @@ async function completeRequest({ requestId, actorId, actorRole }) {
 
     assertRequestAccess(row, actorId, actorRole);
 
-    if (TERMINAL_STATUSES.includes(row.status)) {
+    if (STATUS_GROUPS.TERMINAL.includes(row.status)) {
       const payload = await serializeRequest(dbClient, row);
       await dbClient.query("COMMIT");
       return { request: payload, auto_assigned_requests: [] };
@@ -1139,6 +1193,88 @@ async function rejectOffer({ requestId, expertId, reason }) {
   }
 }
 
+// ✅ Active request for expert (use new STATUS_GROUPS)
+async function getActiveRequestForExpert(client, expertId) {
+  const result = await client.query(
+    `
+      SELECT *
+      FROM expert_connection_queue
+      WHERE expert_id = $1
+        AND status = ANY($2::expert_connection_status[])
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `,
+    [Number(expertId), STATUS_GROUPS.ACTIVE_EXPERT],
+  );
+
+  return result.rows[0] || null;
+}
+
+// ✅ Unified "my active request" for client/expert (polling endpoint backend helper)
+async function getMyActiveRequest({ userId, role }) {
+  const dbClient = await pool.connect();
+
+  try {
+    await dbClient.query("BEGIN");
+
+    const r = normalizeRole(role);
+
+    let row = null;
+
+    if (r === "client") {
+      // uses STATUS_GROUPS.ACTIVE_CLIENT internally via getActiveRequestForClient()
+      row = await getActiveRequestForClient(dbClient, Number(userId));
+    } else if (r === "expert") {
+      row = await getActiveRequestForExpert(dbClient, Number(userId));
+    } else {
+      row = null;
+    }
+
+    const payload = row ? await serializeRequest(dbClient, row) : null;
+
+    await dbClient.query("COMMIT");
+
+    return {
+      has_active_request: Boolean(payload),
+      request: payload,
+    };
+  } catch (err) {
+    await dbClient.query("ROLLBACK");
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+}
+
+// ✅ Expert offers list (use STATUS.OFFERED, serialize for frontend)
+async function getMyOffers({ expertId }) {
+  const dbClient = await pool.connect();
+
+  try {
+    const result = await dbClient.query(
+      `
+        SELECT *
+        FROM expert_connection_queue
+        WHERE expert_id = $1
+          AND status = $2
+          AND (offer_expires_at IS NULL OR offer_expires_at > NOW())
+        ORDER BY offered_at ASC NULLS LAST, created_at ASC, id ASC
+        LIMIT 50
+      `,
+      [Number(expertId), STATUS.OFFERED],
+    );
+
+    const offers = [];
+    for (const row of result.rows) {
+      offers.push(await serializeRequest(dbClient, row));
+    }
+
+    return { offers };
+  } finally {
+    dbClient.release();
+  }
+}
+
 module.exports = {
   requestConnection,
   getRequestStatus,
@@ -1150,4 +1286,7 @@ module.exports = {
   getMyOffers,
   acceptOffer,
   rejectOffer,
+  getActiveRequestForExpert,
+  getMyActiveRequest,
+  getMyOffers,
 };

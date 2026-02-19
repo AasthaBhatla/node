@@ -79,4 +79,18 @@ router.post(
   expertConnectController.rejectOffer,
 );
 
+router.get(
+  "/me/active",
+  authMiddleware,
+  requireRole(["client", "expert"]),
+  expertConnectController.getMyActiveRequest,
+);
+
+router.get(
+  "/expert/me/offers",
+  authMiddleware,
+  requireRole("expert"),
+  expertConnectController.getMyOffers,
+)
+
 module.exports = router;

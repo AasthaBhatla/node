@@ -160,3 +160,28 @@ exports.rejectOffer = async (req, res) => {
     return handleError(res, err, "Reject offer error:");
   }
 };
+
+exports.getMyActiveRequest = async (req, res) => {
+  try {
+    const out = await expertConnectService.getMyActiveRequest({
+      userId: req.user.id,
+      role: req.user.role,
+    });
+
+    return res.status(200).json(out);
+  } catch (err) {
+    return handleError(res, err, "Get my active expert-connect request error:");
+  }
+};
+
+exports.getMyOffers = async (req, res) => {
+  try {
+    const out = await expertConnectService.getMyOffers({
+      expertId: req.user.id,
+    });
+
+    return res.status(200).json(out);
+  } catch (err) {
+    return handleError(res, err, "Get my expert offers error:");
+  }
+};
