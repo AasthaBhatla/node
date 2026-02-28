@@ -17,7 +17,19 @@ function handleError(res, err, fallbackMessage) {
     error: err.message || "Server error",
   });
 }
+function parseRequestType(value, fieldName = "request_type") {
+  if (value == null || value === "") return null;
 
+  const s = String(value).trim().toLowerCase();
+
+  if (!["chat", "call"].includes(s)) {
+    const err = new Error(`${fieldName} must be either 'chat' or 'call'`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return s;
+}
 exports.createConnectionRequest = async (req, res) => {
   try {
     const requestType = String(req.body?.request_type || "chat")
@@ -236,6 +248,10 @@ exports.listMyClientSessions = async (req, res) => {
     const { page, limit, offset } = parsePageLimit(req.query);
     const from = parseYmdDate(req.query.from, "from");
     const to = parseYmdDate(req.query.to, "to");
+    const requestType = parseRequestType(
+      req.query.request_type,
+      "request_type",
+    );
 
     const out = await expertConnectService.listSessionsForClient({
       clientId: req.user.id,
@@ -244,6 +260,7 @@ exports.listMyClientSessions = async (req, res) => {
       offset,
       from,
       to,
+      requestType,
     });
 
     return res.status(200).json(out);
@@ -257,6 +274,10 @@ exports.listMyExpertSessions = async (req, res) => {
     const { page, limit, offset } = parsePageLimit(req.query);
     const from = parseYmdDate(req.query.from, "from");
     const to = parseYmdDate(req.query.to, "to");
+    const requestType = parseRequestType(
+      req.query.request_type,
+      "request_type",
+    );
 
     const out = await expertConnectService.listSessionsForExpert({
       expertId: req.user.id,
@@ -265,6 +286,7 @@ exports.listMyExpertSessions = async (req, res) => {
       offset,
       from,
       to,
+      requestType,
     });
 
     return res.status(200).json(out);

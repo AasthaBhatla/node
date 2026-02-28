@@ -52,6 +52,17 @@ function normalizeRole(role) {
     .trim();
 }
 
+function buildRequestTypeFilter({ requestType }, params) {
+  const clauses = [];
+
+  if (requestType) {
+    params.push(requestType);
+    clauses.push(`q.request_type = $${params.length}`);
+  }
+
+  return clauses;
+}
+
 async function fetchWalletSessionsByIds(dbClient, sessionIds = []) {
   const clean = Array.from(
     new Set(
@@ -1420,7 +1431,6 @@ function shapeSessionRow(row, clientMap, expertMap, walletMap) {
     ? expertMap.get(Number(row.expert_id)) || null
     : null;
 
-  // ✅ canonical column (fallback to legacy session_id if it exists anywhere)
   const walletSessionId =
     row.wallet_session_id != null
       ? Number(row.wallet_session_id)
@@ -1435,6 +1445,7 @@ function shapeSessionRow(row, clientMap, expertMap, walletMap) {
   return {
     id: row.id,
     status: row.status,
+    request_type: row.request_type || null, // ✅ added
 
     client_id: Number(row.client_id),
     expert_id: row.expert_id ? Number(row.expert_id) : null,
@@ -1455,7 +1466,6 @@ function shapeSessionRow(row, clientMap, expertMap, walletMap) {
     client,
     expert,
 
-    // ✅ what you wanted
     wallet_session,
 
     actual_connected_at:
@@ -1540,6 +1550,7 @@ async function listSessionsForClient({
   offset,
   from,
   to,
+  requestType,
 }) {
   const params = [];
   const clauses = [
@@ -1552,6 +1563,7 @@ async function listSessionsForClient({
   params.push(Number(clientId));
 
   clauses.push(...buildDateFilters({ from, to }, params));
+  clauses.push(...buildRequestTypeFilter({ requestType }, params));
 
   const whereSql = clauses.join(" AND ");
 
@@ -1564,7 +1576,11 @@ async function listSessionsForClient({
   });
 
   return {
-    filters: { from: from || null, to: to || null },
+    filters: {
+      from: from || null,
+      to: to || null,
+      request_type: requestType || null,
+    },
     ...out,
   };
 }
@@ -1577,6 +1593,7 @@ async function listSessionsForExpert({
   offset,
   from,
   to,
+  requestType,
 }) {
   const params = [];
   const clauses = [
@@ -1589,6 +1606,7 @@ async function listSessionsForExpert({
   params.push(Number(expertId));
 
   clauses.push(...buildDateFilters({ from, to }, params));
+  clauses.push(...buildRequestTypeFilter({ requestType }, params));
 
   const whereSql = clauses.join(" AND ");
 
@@ -1601,7 +1619,11 @@ async function listSessionsForExpert({
   });
 
   return {
-    filters: { from: from || null, to: to || null },
+    filters: {
+      from: from || null,
+      to: to || null,
+      request_type: requestType || null,
+    },
     ...out,
   };
 }
