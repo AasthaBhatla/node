@@ -20,7 +20,15 @@ function handleError(res, err, fallbackMessage) {
 
 exports.createConnectionRequest = async (req, res) => {
   try {
-    const out = await expertConnectService.requestConnection(req.user.id);
+    const requestType = String(req.body?.request_type || "chat")
+      .toLowerCase()
+      .trim();
+
+    const out = await expertConnectService.requestConnection(
+      req.user.id,
+      requestType,
+    );
+
     return res.status(out.is_existing ? 200 : 201).json(out);
   } catch (err) {
     return handleError(res, err, "Create expert connection request error:");

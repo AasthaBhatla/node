@@ -2,7 +2,10 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const http = require("http");
 const app = express();
+const httpServer = http.createServer(app);
+const PORT = process.env.PORT || 5000;
 
 console.log("RAZORPAY_KEY_ID exists?", !!process.env.RAZORPAY_KEY_ID);
 console.log(
@@ -91,7 +94,18 @@ app.get("/", (req, res) => {
   res.json({ message: "API is working!" });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+// ✅ Socket.IO + server wrapper
+const { initSockets } = require("./sockets");
+const {
+  startExpertConnectPgBridge,
+} = require("./sockets/expertConnectPgBridge");
+
+initSockets(httpServer);
+
+startExpertConnectPgBridge().catch((e) => {
+  console.error("Failed to start expert-connect PG bridge:", e?.message || e);
+});
+
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`server running on port ${PORT}`);
 });

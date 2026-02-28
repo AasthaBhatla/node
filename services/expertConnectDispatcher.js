@@ -1,6 +1,7 @@
 // services/expertConnectDispatcher.js
 const pool = require("../db");
 const notify = require("./notify");
+const { publishExpertConnectEvent } = require("./expertConnectEvents");
 
 const OFFER_TTL_SECONDS = Number(
   process.env.EXPERT_CONNECT_OFFER_TTL_SECONDS || 30,
@@ -144,35 +145,34 @@ async function reconcileEndedWalletSessions(limit = 50) {
     // 2) Mark them completed (once) using SKIP LOCKED
     const completed = await client.query(
       `
-      WITH target AS (
-        SELECT
-          q.id,
-          q.expert_id,
-          COALESCE(s.ended_at, NOW()) AS ended_at
-        FROM expert_connection_queue q
-        JOIN sessions s ON s.session_id = q.session_id
-        WHERE q.status IN ('assigned', 'connected')
-          AND q.session_id IS NOT NULL
-          AND s.status = 'ended'
-        ORDER BY COALESCE(s.ended_at, NOW()) ASC, q.id ASC
-        FOR UPDATE OF q SKIP LOCKED
-        LIMIT $1
-      ),
-      updated AS (
-        UPDATE expert_connection_queue q
-        SET
-          status = 'completed',
-          completed_at = t.ended_at,
-          -- cleanup any stale offer timers
-          offered_at = NULL,
-          offer_expires_at = NULL,
-          updated_at = CURRENT_TIMESTAMP
-        FROM target t
-        WHERE q.id = t.id
-        RETURNING q.id, q.expert_id
-      )
-      SELECT * FROM updated
-      `,
+  WITH target AS (
+    SELECT
+      q.id,
+      q.expert_id,
+      COALESCE(s.ended_at, NOW()) AS ended_at
+    FROM expert_connection_queue q
+    JOIN sessions s ON s.session_id = q.wallet_session_id
+    WHERE q.status IN ('assigned', 'connected')
+      AND q.wallet_session_id IS NOT NULL
+      AND s.status = 'ended'
+    ORDER BY COALESCE(s.ended_at, NOW()) ASC, q.id ASC
+    FOR UPDATE OF q SKIP LOCKED
+    LIMIT $1
+  ),
+  updated AS (
+    UPDATE expert_connection_queue q
+    SET
+      status = 'completed',
+      completed_at = t.ended_at,
+      offered_at = NULL,
+      offer_expires_at = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    FROM target t
+    WHERE q.id = t.id
+    RETURNING q.id, q.expert_id
+  )
+  SELECT * FROM updated
+  `,
       [limit],
     );
 
@@ -308,6 +308,16 @@ async function dispatchOneOffer() {
     await client.query("COMMIT");
 
     const offeredRow = updated.rows[0];
+    // After COMMIT, publish event for socket bridge (worker -> API server -> socket)
+    publishExpertConnectEvent({
+      type: "offer_created",
+      request_id: Number(offeredRow.id),
+      expert_id: Number(expertRow.expert_id),
+      client_id: Number(offeredRow.client_id),
+      request_type: offeredRow.request_type || null,
+      offered_at: offeredRow.offered_at || null,
+      offer_expires_at: offeredRow.offer_expires_at || null,
+    }).catch(() => {});
 
     // 4) notify expert AFTER commit (push only)
     try {

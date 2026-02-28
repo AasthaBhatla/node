@@ -2,6 +2,7 @@
 const pool = require("../db");
 const notify = require("./notify");
 const { kickDispatcher } = require("./expertConnectDispatcher");
+const { publishExpertConnectEvent } = require("./expertConnectEvents");
 
 const AVG_SESSION_SECONDS = 10 * 60;
 
@@ -428,9 +429,14 @@ function assertRequestAccess(row, actorId, actorRole) {
   throw httpError("Access denied", 403);
 }
 
-async function requestConnection(clientId) {
+async function requestConnection(clientId, requestType = "chat") {
   const dbClient = await pool.connect();
-
+  const type = String(requestType || "chat")
+    .toLowerCase()
+    .trim();
+  if (!["chat", "call"].includes(type)) {
+    throw httpError("request_type must be 'chat' or 'call'", 400);
+  }
   try {
     await dbClient.query("BEGIN");
 
@@ -460,17 +466,18 @@ async function requestConnection(clientId) {
     // ✅ Always insert queued (dispatcher will offer to an expert)
     const queued = await dbClient.query(
       `
-        INSERT INTO expert_connection_queue (
-          client_id,
-          status,
-          position,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, 'queued', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING *
-      `,
-      [clientId],
+    INSERT INTO expert_connection_queue (
+      client_id,
+      status,
+      request_type,
+      position,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, 'queued', $2, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    RETURNING *
+  `,
+      [clientId, type],
     );
 
     await normalizeQueuePositions(dbClient);
@@ -1179,7 +1186,16 @@ async function acceptOffer({ requestId, expertId }) {
     );
 
     await dbClient.query("COMMIT");
-
+    // Socket -> client instantly
+    // after commit
+    publishExpertConnectEvent({
+      type: "offer_accepted",
+      request_id: Number(updated.rows[0].id),
+      client_id: Number(updated.rows[0].client_id),
+      expert_id: Number(updated.rows[0].expert_id),
+      request_type: updated.rows[0].request_type || null,
+      assigned_at: updated.rows[0].assigned_at || null,
+    }).catch(() => {});
     // Notify client (push only, no store, no email)
     try {
       await notify.user(

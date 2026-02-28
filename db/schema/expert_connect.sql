@@ -219,4 +219,34 @@ WHERE wallet_session_id IS NULL
 ALTER TABLE expert_connection_queue
   DROP COLUMN IF EXISTS session_id;
 
+
+ALTER TABLE expert_connection_queue
+  ADD COLUMN IF NOT EXISTS request_type TEXT;
+
+-- Default existing rows to 'chat' (safe)
+UPDATE expert_connection_queue
+SET request_type = 'chat'
+WHERE request_type IS NULL;
+
+-- Enforce allowed values (optional but recommended)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'expert_connection_queue_request_type_chk'
+  ) THEN
+    ALTER TABLE expert_connection_queue
+      ADD CONSTRAINT expert_connection_queue_request_type_chk
+      CHECK (request_type IN ('chat', 'call'));
+  END IF;
+END $$;
+
+-- Make it NOT NULL after backfill
+ALTER TABLE expert_connection_queue
+  ALTER COLUMN request_type SET NOT NULL;
+
+-- Helpful index if you filter by type later (optional)
+CREATE INDEX IF NOT EXISTS expert_connection_queue_request_type_idx
+  ON expert_connection_queue(request_type);
+
 COMMIT;
