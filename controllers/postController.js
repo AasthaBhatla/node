@@ -19,38 +19,6 @@ const formatMetadata = (metadataArray) => {
   return metadata;
 };
 
-const parseTermIds = (termIds) => {
-  if (Array.isArray(termIds)) {
-    return termIds.map(Number).filter(Boolean);
-  }
-
-  if (typeof termIds === "string" && termIds.trim()) {
-    return termIds
-      .split(",")
-      .map(id => Number(id.trim()))
-      .filter(Boolean);
-  }
-
-  return [];
-};
-
-const parseMetadata = (metadata) => {
-  if (typeof metadata === "object" && metadata !== null) {
-    return metadata;
-  }
-
-  if (typeof metadata === "string" && metadata.trim()) {
-    try {
-      const parsed = JSON.parse(metadata);
-      return typeof parsed === "object" && parsed !== null ? parsed : {};
-    } catch (error) {
-      return {};
-    }
-  }
-
-  return {};
-};
-
 exports.createPost = async (req, res) => {
   try {
     const { post_type, title, slug, metadata, term_ids } = req.body;
@@ -122,15 +90,14 @@ exports.updatePost = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
   try {
-    const source = req.method === "GET" ? req.query : req.body;
-    const { offset = 0, limit = 10, post_type, term_ids, metadata, author_id } = source;
+    const { offset = 0, limit = 10, post_type, term_ids, metadata, author_id } = req.body;
 
     const posts = await getAllPosts(
       Number(offset) * Number(limit), 
       Number(limit),
       post_type || "post",
-      parseTermIds(term_ids),
-      parseMetadata(metadata),
+      Array.isArray(term_ids) ? term_ids.map(Number).filter(Boolean) : [],
+      typeof metadata === "object" && metadata !== null ? metadata : {},
       author_id ? Number(author_id) : null
     );
 
