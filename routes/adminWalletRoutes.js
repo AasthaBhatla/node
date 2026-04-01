@@ -20,4 +20,11 @@ router.get(
   adminWalletController.getUserTransactions,
 );
 
+router.get(
+  "/users/:user_id/sessions",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.getUserSessionGroups,
+);
+
 module.exports = router;
