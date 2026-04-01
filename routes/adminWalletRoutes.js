@@ -1,0 +1,23 @@
+const express = require("express");
+
+const authMiddleware = require("../middlewares/authMiddleware");
+const requireAdmin = require("../middlewares/requireAdmin");
+const adminWalletController = require("../controllers/adminWalletController");
+
+const router = express.Router();
+
+router.get(
+  "/users/:user_id/balance",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.getUserBalance,
+);
+
+router.get(
+  "/users/:user_id/transactions",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.getUserTransactions,
+);
+
+module.exports = router;

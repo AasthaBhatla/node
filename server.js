@@ -59,6 +59,7 @@ const appointmentsRoutes = require("./routes/appointmentsRoutes");
 const adminEmailRoutes = require("./routes/adminEmailRoutes");
 const expertConnectRoutes = require("./routes/expertConnectRoutes");
 const internalNotifications = require("./routes/internalNotifications");
+const adminWalletRoutes = require("./routes/adminWalletRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -87,6 +88,7 @@ app.use("/volunteers", volunteerApplicationsRoutes);
 app.use("/ngo-help", ngoHelpRoutes);
 app.use("/appointments", appointmentsRoutes);
 app.use("/admin/emails", adminEmailRoutes);
+app.use("/admin/wallet", adminWalletRoutes);
 app.use("/expert-connect", expertConnectRoutes);
 app.use("/internal/notifications", internalNotifications);
 
