@@ -1,6 +1,6 @@
 const pool = require("../db");
 const userServices = require("./userService");
-const { debitWallet } = require("./walletService");
+const { creditWallet, debitWallet } = require("./walletService");
 
 const assertPosInt = (value) => Number.isInteger(value) && value > 0;
 
@@ -367,6 +367,68 @@ async function getUserWalletSessionGroupsForAdmin({
   }
 }
 
+async function createUserWalletCreditForAdmin({
+  userId,
+  amountCredits,
+  title,
+  note,
+  adminUser,
+}) {
+  const targetUserId = parseInt(userId, 10);
+  const safeAmount = Number(amountCredits);
+  const safeTitle = String(title || "").trim();
+  const safeNote = String(note || "").trim();
+
+  if (!assertPosInt(targetUserId)) {
+    const error = new Error("Invalid user_id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!assertPosInt(safeAmount)) {
+    const error = new Error("amount_credits must be a positive integer");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!safeTitle) {
+    const error = new Error("A title is required for this credit entry.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const creditedAt = new Date().toISOString();
+  const result = await creditWallet({
+    userId: targetUserId,
+    amount: safeAmount,
+    reason: "adjustment",
+    reference_kind: "admin_credit",
+    reference_id: `admin-credit:${targetUserId}:${Date.now()}`,
+    idempotency_key: `admin-credit:${targetUserId}:${Date.now()}:${adminUser?.id || "admin"}`,
+    metadata: {
+      credit_title: safeTitle,
+      credit_note: safeNote,
+      credited_at: creditedAt,
+      credited_by_admin_id: adminUser?.id || null,
+      credited_by_admin_email: adminUser?.email || null,
+      credited_by_admin_role: adminUser?.role || null,
+    },
+  });
+
+  return {
+    user_id: targetUserId,
+    amount_credits: safeAmount,
+    title: safeTitle,
+    note: safeNote,
+    credited_at: creditedAt,
+    credited_by_admin_id: adminUser?.id || null,
+    credited_by_admin_email: adminUser?.email || null,
+    credited_by_admin_role: adminUser?.role || null,
+    balance_credits: Number(result.balance_credits ?? 0),
+    message: result.message,
+  };
+}
+
 async function createUserWalletPayoutForAdmin({
   userId,
   amountCredits,
@@ -434,6 +496,7 @@ async function createUserWalletPayoutForAdmin({
 }
 
 module.exports = {
+  createUserWalletCreditForAdmin,
   createUserWalletPayoutForAdmin,
   getUserWalletBalanceForAdmin,
   getUserWalletTransactionsForAdmin,

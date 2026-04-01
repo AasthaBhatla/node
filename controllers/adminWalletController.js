@@ -1,4 +1,5 @@
 const {
+  createUserWalletCreditForAdmin,
   createUserWalletPayoutForAdmin,
   getUserWalletBalanceForAdmin,
   getUserWalletTransactionsForAdmin,
@@ -89,6 +90,34 @@ exports.createUserPayout = async (req, res) => {
     const data = await createUserWalletPayoutForAdmin({
       userId,
       amountCredits,
+      note,
+      adminUser: req.user,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      body: data,
+    });
+  } catch (error) {
+    return failure(
+      res,
+      error.statusCode || 500,
+      error.message || "Internal server error",
+    );
+  }
+};
+
+exports.createUserCredit = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.user_id, 10);
+    const amountCredits = req.body?.amount_credits;
+    const title = req.body?.title;
+    const note = req.body?.note;
+
+    const data = await createUserWalletCreditForAdmin({
+      userId,
+      amountCredits,
+      title,
       note,
       adminUser: req.user,
     });

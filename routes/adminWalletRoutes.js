@@ -28,6 +28,13 @@ router.get(
 );
 
 router.post(
+  "/users/:user_id/credits",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.createUserCredit,
+);
+
+router.post(
   "/users/:user_id/payouts",
   authMiddleware,
   requireAdmin(),
