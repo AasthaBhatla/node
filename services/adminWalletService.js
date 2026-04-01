@@ -1,5 +1,6 @@
 const pool = require("../db");
 const userServices = require("./userService");
+const { debitWallet } = require("./walletService");
 
 const assertPosInt = (value) => Number.isInteger(value) && value > 0;
 
@@ -366,7 +367,74 @@ async function getUserWalletSessionGroupsForAdmin({
   }
 }
 
+async function createUserWalletPayoutForAdmin({
+  userId,
+  amountCredits,
+  note,
+  adminUser,
+}) {
+  const targetUserId = parseInt(userId, 10);
+  const amount = parseInt(amountCredits, 10);
+  const trimmedNote = String(note ?? "").trim();
+
+  if (!assertPosInt(targetUserId)) {
+    const error = new Error("Invalid user_id");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!assertPosInt(amount)) {
+    const error = new Error("amount_credits must be a positive integer");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!trimmedNote) {
+    const error = new Error("note is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const idempotencyKey = `admin-payout:${targetUserId}:${Date.now()}:${adminUser?.id || "admin"}`;
+
+  const result = await debitWallet({
+    userId: targetUserId,
+    amount,
+    reason: "adjustment",
+    reference_kind: "admin_payout",
+    reference_id: idempotencyKey,
+    idempotency_key: idempotencyKey,
+    metadata: {
+      payout_note: trimmedNote,
+      paid_at: now,
+      paid_by_admin_id:
+        adminUser?.id === undefined || adminUser?.id === null
+          ? null
+          : Number(adminUser.id),
+      paid_by_admin_email: adminUser?.email ? String(adminUser.email) : "",
+      paid_by_admin_role: adminUser?.role ? String(adminUser.role) : "",
+    },
+  });
+
+  return {
+    user_id: targetUserId,
+    amount_credits: amount,
+    note: trimmedNote,
+    paid_at: now,
+    paid_by_admin_id:
+      adminUser?.id === undefined || adminUser?.id === null
+        ? null
+        : Number(adminUser.id),
+    paid_by_admin_email: adminUser?.email ? String(adminUser.email) : "",
+    paid_by_admin_role: adminUser?.role ? String(adminUser.role) : "",
+    balance_credits: Number(result.balance_credits ?? 0),
+    message: result.message || "Payout recorded successfully",
+  };
+}
+
 module.exports = {
+  createUserWalletPayoutForAdmin,
   getUserWalletBalanceForAdmin,
   getUserWalletTransactionsForAdmin,
   getUserWalletSessionGroupsForAdmin,

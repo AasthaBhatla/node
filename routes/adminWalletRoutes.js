@@ -27,4 +27,11 @@ router.get(
   adminWalletController.getUserSessionGroups,
 );
 
+router.post(
+  "/users/:user_id/payouts",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.createUserPayout,
+);
+
 module.exports = router;
