@@ -4,12 +4,20 @@ const { getQueueOverview } = require("./expertConnectService");
 
 const APPROVABLE_ROLES = ["lawyer", "officer", "ngo"];
 const RANGE_DAYS = {
+  "1d": 1,
   "7d": 7,
   "30d": 30,
+  "90d": 90,
+  "365d": 365,
 };
 
 function normalizeRange(range) {
-  return RANGE_DAYS[String(range || "").trim()] ? String(range).trim() : "7d";
+  const value = String(range || "").trim();
+  if (value === "custom") {
+    return "custom";
+  }
+
+  return RANGE_DAYS[value] ? value : "7d";
 }
 
 function normalizeTimeZone(timeZone) {
@@ -58,6 +66,88 @@ function buildDateKeys(days, timeZone) {
   }
 
   return keys;
+}
+
+function normalizeDateInput(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function dateKeyToDate(key) {
+  const [year, month, day] = String(key || "")
+    .split("-")
+    .map((value) => Number.parseInt(value, 10));
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(Date.UTC(year, month - 1, day, 12));
+}
+
+function addDaysToDateKey(key, delta) {
+  const date = dateKeyToDate(key);
+  if (!date) {
+    return null;
+  }
+
+  date.setUTCDate(date.getUTCDate() + delta);
+  return dateKeyFormatter("UTC").format(date);
+}
+
+function buildDateKeysFromBounds(dateFrom, dateTo) {
+  const keys = [];
+  let cursor = dateFrom;
+
+  while (cursor && cursor <= dateTo) {
+    keys.push(cursor);
+    cursor = addDaysToDateKey(cursor, 1);
+  }
+
+  return keys;
+}
+
+function resolveDateWindow({ range, timeZone, from, to }) {
+  const safeRange = normalizeRange(range);
+
+  if (safeRange === "custom") {
+    const dateFrom = normalizeDateInput(from);
+    const dateTo = normalizeDateInput(to);
+
+    if (!dateFrom || !dateTo) {
+      const error = new Error("Valid from and to dates are required for a custom range.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (dateFrom > dateTo) {
+      const error = new Error("The custom from date cannot be after the to date.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const trendLabels = buildDateKeysFromBounds(dateFrom, dateTo);
+    return {
+      safeRange,
+      dateFrom,
+      dateTo,
+      rangeDays: Math.max(trendLabels.length, 1),
+      trendLabels,
+    };
+  }
+
+  const rangeDays = RANGE_DAYS[safeRange];
+  const dateTo = toDateKey(new Date(), timeZone);
+  const dateFrom = addDaysToDateKey(dateTo, -(rangeDays - 1));
+  const trendLabels = buildDateKeys(rangeDays, timeZone);
+
+  return {
+    safeRange,
+    dateFrom,
+    dateTo,
+    rangeDays,
+    trendLabels,
+  };
 }
 
 function createZeroSeries(labels) {
@@ -161,12 +251,20 @@ async function fetchPendingApprovalGroups() {
   return groups;
 }
 
-async function fetchDashboardSummary({ adminUserId, range = "7d", timeZone = "UTC" }) {
-  const safeRange = normalizeRange(range);
+async function fetchDashboardSummary({
+  adminUserId,
+  range = "7d",
+  timeZone = "UTC",
+  from,
+  to,
+}) {
   const safeTimeZone = normalizeTimeZone(timeZone);
-  const rangeDays = RANGE_DAYS[safeRange];
-  const lookbackDays = Math.max(rangeDays + 7, 40);
-  const trendLabels = buildDateKeys(rangeDays, safeTimeZone);
+  const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
+    range,
+    timeZone: safeTimeZone,
+    from,
+    to,
+  });
 
   const [
     userTotalsResult,
@@ -225,9 +323,10 @@ async function fetchDashboardSummary({ adminUserId, range = "7d", timeZone = "UT
       `
         SELECT created_at
         FROM users
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
       `,
-      [lookbackDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -252,9 +351,10 @@ async function fetchDashboardSummary({ adminUserId, range = "7d", timeZone = "UT
       `
         SELECT created_at
         FROM reviews
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
       `,
-      [lookbackDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -276,32 +376,35 @@ async function fetchDashboardSummary({ adminUserId, range = "7d", timeZone = "UT
           p.post_type,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (
-            WHERE p.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+            WHERE p.created_at >= $1::date
+              AND p.created_at < ($2::date + INTERVAL '1 day')
           )::int AS created_in_range
         FROM posts p
         GROUP BY p.post_type
         ORDER BY total DESC, p.post_type ASC
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(`SELECT COUNT(*)::int AS total_taxonomies FROM taxonomy`),
     pool.query(
       `
         SELECT post_type, created_at
         FROM posts
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
-          AND post_type = ANY($2::text[])
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
+          AND post_type = ANY($3::text[])
       `,
-      [lookbackDays, ["seek-help", "apply-as-volunteer"]],
+      [dateFrom, dateTo, ["seek-help", "apply-as-volunteer"]],
     ),
     getQueueOverview(),
     pool.query(
       `
         SELECT created_at
         FROM expert_connection_queue
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
       `,
-      [lookbackDays],
+      [dateFrom, dateTo],
     ),
     getUnreadCount(adminUserId),
   ]);
@@ -431,6 +534,8 @@ async function fetchDashboardSummary({ adminUserId, range = "7d", timeZone = "UT
   return {
     range: safeRange,
     time_zone: safeTimeZone,
+    date_from: dateFrom,
+    date_to: dateTo,
     headline: {
       total_users: toInt(userTotalsRow.total_users),
       pending_approvals_total: toInt(userTotalsRow.pending_approvals_total),

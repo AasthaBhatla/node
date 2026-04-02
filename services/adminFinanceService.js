@@ -1,12 +1,20 @@
 const pool = require("../db");
 
 const RANGE_DAYS = {
+  "1d": 1,
   "7d": 7,
   "30d": 30,
+  "90d": 90,
+  "365d": 365,
 };
 
 function normalizeRange(range) {
-  return RANGE_DAYS[String(range || "").trim()] ? String(range).trim() : "30d";
+  const value = String(range || "").trim();
+  if (value === "custom") {
+    return "custom";
+  }
+
+  return RANGE_DAYS[value] ? value : "30d";
 }
 
 function normalizeTimeZone(timeZone) {
@@ -55,6 +63,86 @@ function buildDateKeys(days, timeZone) {
   }
 
   return keys;
+}
+
+function normalizeDateInput(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function dateKeyToDate(key) {
+  const [year, month, day] = String(key || "")
+    .split("-")
+    .map((value) => Number.parseInt(value, 10));
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(Date.UTC(year, month - 1, day, 12));
+}
+
+function addDaysToDateKey(key, delta) {
+  const date = dateKeyToDate(key);
+  if (!date) {
+    return null;
+  }
+
+  date.setUTCDate(date.getUTCDate() + delta);
+  return dateKeyFormatter("UTC").format(date);
+}
+
+function buildDateKeysFromBounds(dateFrom, dateTo) {
+  const keys = [];
+  let cursor = dateFrom;
+
+  while (cursor && cursor <= dateTo) {
+    keys.push(cursor);
+    cursor = addDaysToDateKey(cursor, 1);
+  }
+
+  return keys;
+}
+
+function resolveDateWindow({ range, timeZone, from, to }) {
+  const safeRange = normalizeRange(range);
+
+  if (safeRange === "custom") {
+    const dateFrom = normalizeDateInput(from);
+    const dateTo = normalizeDateInput(to);
+
+    if (!dateFrom || !dateTo) {
+      const error = new Error("Valid from and to dates are required for a custom range.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (dateFrom > dateTo) {
+      const error = new Error("The custom from date cannot be after the to date.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const trendLabels = buildDateKeysFromBounds(dateFrom, dateTo);
+    return {
+      safeRange,
+      dateFrom,
+      dateTo,
+      trendLabels,
+    };
+  }
+
+  const rangeDays = RANGE_DAYS[safeRange];
+  const dateTo = toDateKey(new Date(), timeZone);
+  const dateFrom = addDaysToDateKey(dateTo, -(rangeDays - 1));
+  const trendLabels = buildDateKeys(rangeDays, timeZone);
+
+  return {
+    safeRange,
+    dateFrom,
+    dateTo,
+    trendLabels,
+  };
 }
 
 function createZeroSeries(labels) {
@@ -156,11 +244,14 @@ function buildAdjustmentRecord(row) {
   };
 }
 
-async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
-  const safeRange = normalizeRange(range);
+async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }) {
   const safeTimeZone = normalizeTimeZone(timeZone);
-  const rangeDays = RANGE_DAYS[safeRange];
-  const trendLabels = buildDateKeys(rangeDays, safeTimeZone);
+  const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
+    range,
+    timeZone: safeTimeZone,
+    from,
+    to,
+  });
 
   const [
     walletSnapshotResult,
@@ -185,80 +276,96 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
         SELECT
           COALESCE(SUM(total_amount_paise) FILTER (
             WHERE status = 'completed'
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS paid_amount_paise,
           COUNT(*) FILTER (
             WHERE status = 'completed'
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           )::int AS paid_orders_count,
           COALESCE(SUM(total_amount_paise) FILTER (
             WHERE status IN ('pending', 'processing', 'hold')
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS pending_amount_paise,
           COUNT(*) FILTER (
             WHERE status IN ('pending', 'processing', 'hold')
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           )::int AS pending_orders_count,
           COALESCE(SUM(total_amount_paise) FILTER (
             WHERE status IN ('cancelled', 'return')
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS cancelled_amount_paise,
           COUNT(*) FILTER (
             WHERE status IN ('cancelled', 'return')
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           )::int AS cancelled_orders_count,
           COALESCE(AVG(total_amount_paise) FILTER (
             WHERE status = 'completed'
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           ), 0)::numeric(14,2) AS average_paid_order_size_paise,
           COALESCE(SUM(credits_to_grant) FILTER (
             WHERE status = 'completed'
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS credits_sold_total,
           COALESCE(SUM(credits_to_grant) FILTER (
             WHERE status = 'completed'
               AND credits_granted = TRUE
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS credits_granted_total,
           COUNT(*) FILTER (
             WHERE status = 'completed'
               AND COALESCE(credits_granted, FALSE) = FALSE
-              AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND paid_at >= $1::date
+              AND paid_at < ($2::date + INTERVAL '1 day')
           )::int AS paid_without_credit_grant_count
         FROM orders
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
         SELECT
           COALESCE(SUM(amount_credits) FILTER (
             WHERE direction = 'credit'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS credits_in_total,
           COALESCE(SUM(amount_credits) FILTER (
             WHERE direction = 'debit'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS credits_out_total,
           COALESCE(SUM(amount_credits) FILTER (
             WHERE reference_kind = 'admin_credit'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS admin_credits_total,
           COUNT(*) FILTER (
             WHERE reference_kind = 'admin_credit'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           )::int AS admin_credits_count,
           COALESCE(SUM(amount_credits) FILTER (
             WHERE reference_kind = 'admin_payout'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS admin_payouts_total,
           COUNT(*) FILTER (
             WHERE reference_kind = 'admin_payout'
-              AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
           )::int AS admin_payouts_count
         FROM wallet_transactions
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -278,11 +385,12 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
           END AS bucket,
           COALESCE(SUM(amount_credits), 0)::bigint AS total_credits
         FROM wallet_transactions
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
         GROUP BY direction::text, bucket
         ORDER BY direction::text ASC, bucket ASC
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -293,9 +401,10 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
         WHERE direction = 'debit'
           AND reference_kind = 'session'
           AND reference_id LIKE 'session:%'
-          AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+          AND created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -316,12 +425,13 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
           ON um.user_id = u.id
          AND um.key IN ('first_name', 'last_name')
         WHERE wt.reference_kind IN ('admin_credit', 'admin_payout')
-          AND wt.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+          AND wt.created_at >= $1::date
+          AND wt.created_at < ($2::date + INTERVAL '1 day')
         GROUP BY wt.id, wt.created_at, wt.direction, wt.amount_credits, wt.reference_kind, wt.metadata, u.id, u.email
         ORDER BY wt.created_at DESC, wt.id DESC
         LIMIT 10
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
@@ -329,19 +439,21 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
         FROM orders
         WHERE status = 'completed'
           AND paid_at IS NOT NULL
-          AND paid_at >= NOW() - ($1::int * INTERVAL '1 day')
+          AND paid_at >= $1::date
+          AND paid_at < ($2::date + INTERVAL '1 day')
         ORDER BY paid_at ASC
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
     pool.query(
       `
         SELECT created_at, direction, reference_kind, amount_credits
         FROM wallet_transactions
-        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+        WHERE created_at >= $1::date
+          AND created_at < ($2::date + INTERVAL '1 day')
         ORDER BY created_at ASC
       `,
-      [rangeDays],
+      [dateFrom, dateTo],
     ),
   ]);
 
@@ -394,6 +506,8 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC" }) {
   return {
     range: safeRange,
     time_zone: safeTimeZone,
+    date_from: dateFrom,
+    date_to: dateTo,
     headline: {
       paid_amount_paise: toInt(ordersSummaryRow.paid_amount_paise),
       outstanding_balance_credits: toInt(walletSnapshotRow.outstanding_balance_credits),

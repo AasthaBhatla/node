@@ -12,6 +12,8 @@ exports.getSummary = async (req, res) => {
     const data = await fetchFinanceSummary({
       range: req.query.range,
       timeZone: req.query.tz || req.query.timeZone,
+      from: req.query.from || req.query.date_from,
+      to: req.query.to || req.query.date_to,
     });
 
     return res.status(200).json({
