@@ -27,6 +27,13 @@ router.get(
   adminWalletController.getUserSessionGroups,
 );
 
+router.get(
+  "/users/:user_id/analytics",
+  authMiddleware,
+  requireAdmin(),
+  adminWalletController.getUserAnalytics,
+);
+
 router.post(
   "/users/:user_id/credits",
   authMiddleware,

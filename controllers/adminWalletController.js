@@ -1,6 +1,7 @@
 const {
   createUserWalletCreditForAdmin,
   createUserWalletPayoutForAdmin,
+  getUserWalletAnalyticsForAdmin,
   getUserWalletBalanceForAdmin,
   getUserWalletTransactionsForAdmin,
   getUserWalletSessionGroupsForAdmin,
@@ -66,6 +67,35 @@ exports.getUserSessionGroups = async (req, res) => {
       userId,
       limit,
       offset,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      body: data,
+    });
+  } catch (error) {
+    return failure(
+      res,
+      error.statusCode || 500,
+      error.message || "Internal server error",
+    );
+  }
+};
+
+exports.getUserAnalytics = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.user_id, 10);
+    const range = req.query.range;
+    const timeZone = req.query.tz;
+    const from = req.query.from;
+    const to = req.query.to;
+
+    const data = await getUserWalletAnalyticsForAdmin({
+      userId,
+      range,
+      timeZone,
+      from,
+      to,
     });
 
     return res.status(200).json({
