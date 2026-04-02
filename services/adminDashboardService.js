@@ -44,6 +44,17 @@ function dateKeyFormatter(timeZone) {
   });
 }
 
+function hourKeyFormatter(timeZone) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  });
+}
+
 function toDateKey(input, timeZone) {
   if (!input) return null;
 
@@ -63,6 +74,19 @@ function buildDateKeys(days, timeZone) {
     if (key && keys[keys.length - 1] !== key) {
       keys.push(key);
     }
+  }
+
+  return keys;
+}
+
+function buildHourKeys(dateKey, timeZone) {
+  if (!normalizeDateInput(dateKey)) {
+    return [];
+  }
+
+  const keys = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    keys.push(`${dateKey} ${String(hour).padStart(2, "0")}:00`);
   }
 
   return keys;
@@ -126,12 +150,17 @@ function resolveDateWindow({ range, timeZone, from, to }) {
       throw error;
     }
 
-    const trendLabels = buildDateKeysFromBounds(dateFrom, dateTo);
+    const isSingleDay = dateFrom === dateTo;
+    const trendGranularity = isSingleDay ? "hour" : "day";
+    const trendLabels = isSingleDay
+      ? buildHourKeys(dateFrom, timeZone)
+      : buildDateKeysFromBounds(dateFrom, dateTo);
     return {
       safeRange,
       dateFrom,
       dateTo,
       rangeDays: Math.max(trendLabels.length, 1),
+      trendGranularity,
       trendLabels,
     };
   }
@@ -139,13 +168,18 @@ function resolveDateWindow({ range, timeZone, from, to }) {
   const rangeDays = RANGE_DAYS[safeRange];
   const dateTo = toDateKey(new Date(), timeZone);
   const dateFrom = addDaysToDateKey(dateTo, -(rangeDays - 1));
-  const trendLabels = buildDateKeys(rangeDays, timeZone);
+  const trendGranularity = rangeDays === 1 ? "hour" : "day";
+  const trendLabels =
+    trendGranularity === "hour"
+      ? buildHourKeys(dateFrom, timeZone)
+      : buildDateKeys(rangeDays, timeZone);
 
   return {
     safeRange,
     dateFrom,
     dateTo,
     rangeDays,
+    trendGranularity,
     trendLabels,
   };
 }
@@ -154,11 +188,30 @@ function createZeroSeries(labels) {
   return Object.fromEntries(labels.map((label) => [label, 0]));
 }
 
-function bucketTimestamps(timestamps, labels, timeZone) {
+function toHourKey(input, timeZone) {
+  if (!input) return null;
+
+  const value = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  const parts = hourKeyFormatter(timeZone).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+  return `${year}-${month}-${day} ${hour}:00`;
+}
+
+function bucketTimestamps(timestamps, labels, timeZone, granularity = "day") {
   const counts = createZeroSeries(labels);
 
   for (const timestamp of timestamps) {
-    const key = toDateKey(timestamp, timeZone);
+    const key =
+      granularity === "hour"
+        ? toHourKey(timestamp, timeZone)
+        : toDateKey(timestamp, timeZone);
     if (key && key in counts) {
       counts[key] += 1;
     }
@@ -259,7 +312,7 @@ async function fetchDashboardSummary({
   to,
 }) {
   const safeTimeZone = normalizeTimeZone(timeZone);
-  const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
+  const { safeRange, dateFrom, dateTo, trendGranularity, trendLabels } = resolveDateWindow({
     range,
     timeZone: safeTimeZone,
     from,
@@ -445,12 +498,14 @@ async function fetchDashboardSummary({
     recentUsersResult.rows.map((row) => row.created_at),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
   const reviewsCreatedSeries = bucketTimestamps(
     recentReviewsResult.rows.map((row) => row.created_at),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
   const helpRequestEvents = recentPostEventsResult.rows.filter(
@@ -464,18 +519,21 @@ async function fetchDashboardSummary({
     helpRequestEvents.map((row) => row.created_at),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
   const volunteerRequestsCreatedSeries = bucketTimestamps(
     volunteerRequestEvents.map((row) => row.created_at),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
   const expertRequestsCreatedSeries = bucketTimestamps(
     recentExpertRequestsResult.rows.map((row) => row.created_at),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
   const approvalEvents = recentApprovalEventsResult.rows
@@ -490,22 +548,16 @@ async function fetchDashboardSummary({
     approvalEvents.map((event) => event.reviewedAt),
     trendLabels,
     safeTimeZone,
+    trendGranularity,
   );
 
-  const approvalEventsByDate = approvalEvents.reduce((accumulator, event) => {
-    const key = toDateKey(event.reviewedAt, safeTimeZone);
-    if (!key) {
-      return accumulator;
-    }
-
-    if (!accumulator[key]) {
-      accumulator[key] = [];
-    }
-    accumulator[key].push(event);
-    return accumulator;
-  }, {});
-
-  const approvalRangeEvents = trendLabels.flatMap((label) => approvalEventsByDate[label] || []);
+  const approvalRangeEvents = approvalEvents.filter((event) => {
+    const key =
+      trendGranularity === "hour"
+        ? toHourKey(event.reviewedAt, safeTimeZone)
+        : toDateKey(event.reviewedAt, safeTimeZone);
+    return Boolean(key && trendLabels.includes(key));
+  });
   const reviewedInRange = approvalRangeEvents.length;
   const approvedInRange = approvalRangeEvents.filter((event) => event.status === "verified").length;
   const rejectedInRange = approvalRangeEvents.filter((event) => event.status === "blocked").length;
@@ -597,6 +649,7 @@ async function fetchDashboardSummary({
       unread_count: toInt(unreadCount),
     },
     trends: {
+      granularity: trendGranularity,
       labels: trendLabels,
       users_created: usersCreatedSeries,
       approvals_reviewed: approvalsReviewedSeries,

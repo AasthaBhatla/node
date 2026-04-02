@@ -43,6 +43,17 @@ function dateKeyFormatter(timeZone) {
   });
 }
 
+function hourKeyFormatter(timeZone) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  });
+}
+
 function toDateKey(input, timeZone) {
   if (!input) return null;
 
@@ -62,6 +73,19 @@ function buildDateKeys(days, timeZone) {
     if (key && keys[keys.length - 1] !== key) {
       keys.push(key);
     }
+  }
+
+  return keys;
+}
+
+function buildHourKeys(dateKey, timeZone) {
+  if (!normalizeDateInput(dateKey)) {
+    return [];
+  }
+
+  const keys = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    keys.push(`${dateKey} ${String(hour).padStart(2, "0")}:00`);
   }
 
   return keys;
@@ -125,11 +149,16 @@ function resolveDateWindow({ range, timeZone, from, to }) {
       throw error;
     }
 
-    const trendLabels = buildDateKeysFromBounds(dateFrom, dateTo);
+    const isSingleDay = dateFrom === dateTo;
+    const trendGranularity = isSingleDay ? "hour" : "day";
+    const trendLabels = isSingleDay
+      ? buildHourKeys(dateFrom, timeZone)
+      : buildDateKeysFromBounds(dateFrom, dateTo);
     return {
       safeRange,
       dateFrom,
       dateTo,
+      trendGranularity,
       trendLabels,
     };
   }
@@ -137,12 +166,17 @@ function resolveDateWindow({ range, timeZone, from, to }) {
   const rangeDays = RANGE_DAYS[safeRange];
   const dateTo = toDateKey(new Date(), timeZone);
   const dateFrom = addDaysToDateKey(dateTo, -(rangeDays - 1));
-  const trendLabels = buildDateKeys(rangeDays, timeZone);
+  const trendGranularity = rangeDays === 1 ? "hour" : "day";
+  const trendLabels =
+    trendGranularity === "hour"
+      ? buildHourKeys(dateFrom, timeZone)
+      : buildDateKeys(rangeDays, timeZone);
 
   return {
     safeRange,
     dateFrom,
     dateTo,
+    trendGranularity,
     trendLabels,
   };
 }
@@ -151,11 +185,30 @@ function createZeroSeries(labels) {
   return Object.fromEntries(labels.map((label) => [label, 0]));
 }
 
-function bucketCounts(rows, labels, timeZone, fieldName) {
+function toHourKey(input, timeZone) {
+  if (!input) return null;
+
+  const value = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  const parts = hourKeyFormatter(timeZone).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+  return `${year}-${month}-${day} ${hour}:00`;
+}
+
+function bucketCounts(rows, labels, timeZone, fieldName, granularity = "day") {
   const counts = createZeroSeries(labels);
 
   for (const row of rows) {
-    const key = toDateKey(row[fieldName], timeZone);
+    const key =
+      granularity === "hour"
+        ? toHourKey(row[fieldName], timeZone)
+        : toDateKey(row[fieldName], timeZone);
     if (key && key in counts) {
       counts[key] += 1;
     }
@@ -164,11 +217,14 @@ function bucketCounts(rows, labels, timeZone, fieldName) {
   return labels.map((label) => counts[label] ?? 0);
 }
 
-function bucketSums(rows, labels, timeZone, fieldName, valueName) {
+function bucketSums(rows, labels, timeZone, fieldName, valueName, granularity = "day") {
   const sums = createZeroSeries(labels);
 
   for (const row of rows) {
-    const key = toDateKey(row[fieldName], timeZone);
+    const key =
+      granularity === "hour"
+        ? toHourKey(row[fieldName], timeZone)
+        : toDateKey(row[fieldName], timeZone);
     if (key && key in sums) {
       sums[key] += Number(row[valueName] || 0);
     }
@@ -333,7 +389,7 @@ async function fetchPartnerPayoutSummary() {
 
 async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }) {
   const safeTimeZone = normalizeTimeZone(timeZone);
-  const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
+  const { safeRange, dateFrom, dateTo, trendGranularity, trendLabels } = resolveDateWindow({
     range,
     timeZone: safeTimeZone,
     from,
@@ -343,10 +399,11 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
   const [
     walletSnapshotResult,
     ordersSummaryResult,
+    platformSummaryResult,
+    partnerPayoutsResult,
     walletMovementResult,
     walletBreakdownResult,
     sessionSummaryResult,
-    partnerPayoutsResult,
     recentAdjustmentsResult,
     paidOrderTrendResult,
     walletTrendResult,
@@ -421,6 +478,18 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
     pool.query(
       `
         SELECT
+          COALESCE((SELECT balance_credits FROM platform_wallet WHERE id = 1), 0)::bigint AS platform_balance_credits,
+          COALESCE(SUM(amount_credits) FILTER (
+            WHERE created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
+          ), 0)::bigint AS platform_earnings_credits
+        FROM job_posting_fees
+      `,
+      [dateFrom, dateTo],
+    ),
+    pool.query(
+      `
+        SELECT
           u.id,
           u.email,
           LOWER(COALESCE(u.role, '')) AS role,
@@ -454,6 +523,12 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
               AND created_at >= $1::date
               AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS credits_out_total,
+          COALESCE(SUM(amount_credits) FILTER (
+            WHERE direction = 'debit'
+              AND reference_kind IS DISTINCT FROM 'admin_payout'
+              AND created_at >= $1::date
+              AND created_at < ($2::date + INTERVAL '1 day')
+          ), 0)::bigint AS credits_spent_total,
           COALESCE(SUM(amount_credits) FILTER (
             WHERE reference_kind = 'admin_credit'
               AND created_at >= $1::date
@@ -570,6 +645,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
 
   const walletSnapshotRow = walletSnapshotResult.rows[0] || {};
   const ordersSummaryRow = ordersSummaryResult.rows[0] || {};
+  const platformSummaryRow = platformSummaryResult.rows[0] || {};
   const walletMovementRow = walletMovementResult.rows[0] || {};
   const sessionSummaryRow = sessionSummaryResult.rows[0] || {};
   const partnerPayoutGroups = buildPartnerPayoutGroups(partnerPayoutsResult.rows);
@@ -578,7 +654,9 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
     (row) => String(row.direction || "") === "credit",
   );
   const creditsSpentRows = walletTrendResult.rows.filter(
-    (row) => String(row.direction || "") === "debit",
+    (row) =>
+      String(row.direction || "") === "debit" &&
+      String(row.reference_kind || "") !== "admin_payout",
   );
   const adminPayoutTrendRows = walletTrendResult.rows.filter(
     (row) =>
@@ -624,9 +702,10 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
       paid_amount_paise: toInt(ordersSummaryRow.paid_amount_paise),
       outstanding_balance_credits: toInt(walletSnapshotRow.outstanding_balance_credits),
       paid_orders_count: toInt(ordersSummaryRow.paid_orders_count),
-      credits_spent_total: toInt(walletMovementRow.credits_out_total),
+      credits_spent_total: toInt(walletMovementRow.credits_spent_total),
       admin_payouts_total: toInt(walletMovementRow.admin_payouts_total),
-      admin_credits_total: toInt(walletMovementRow.admin_credits_total),
+      admin_credits_total: toInt(platformSummaryRow.platform_earnings_credits),
+      platform_balance_credits: toInt(platformSummaryRow.platform_balance_credits),
     },
     cash_orders: {
       paid_amount_paise: toInt(ordersSummaryRow.paid_amount_paise),
@@ -676,6 +755,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
       recent_adjustments: recentAdjustmentsResult.rows.map(buildAdjustmentRecord),
     },
     trends: {
+      granularity: trendGranularity,
       labels: trendLabels,
       paid_amount_paise: bucketSums(
         paidOrderTrendResult.rows,
@@ -683,12 +763,14 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         safeTimeZone,
         "paid_at",
         "total_amount_paise",
+        trendGranularity,
       ),
       paid_orders_count: bucketCounts(
         paidOrderTrendResult.rows,
         trendLabels,
         safeTimeZone,
         "paid_at",
+        trendGranularity,
       ),
       credits_added: bucketSums(
         creditsAddedRows,
@@ -696,6 +778,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         safeTimeZone,
         "created_at",
         "amount_credits",
+        trendGranularity,
       ),
       credits_spent: bucketSums(
         creditsSpentRows,
@@ -703,6 +786,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         safeTimeZone,
         "created_at",
         "amount_credits",
+        trendGranularity,
       ),
       admin_payouts: bucketSums(
         adminPayoutTrendRows,
@@ -710,6 +794,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         safeTimeZone,
         "created_at",
         "amount_credits",
+        trendGranularity,
       ),
       session_credits_billed: bucketSums(
         sessionBilledTrendRows,
@@ -717,6 +802,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         safeTimeZone,
         "created_at",
         "amount_credits",
+        trendGranularity,
       ),
     },
   };
