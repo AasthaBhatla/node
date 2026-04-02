@@ -261,6 +261,76 @@ function buildPartnerPayoutUser(row) {
   };
 }
 
+function buildPartnerPayoutGroups(rows) {
+  const partnerPayoutGroups = PARTNER_PAYOUT_ROLES.map((role) => ({
+    role,
+    partner_count: 0,
+    total_balance_credits: 0,
+    users: [],
+  }));
+  const partnerPayoutMap = partnerPayoutGroups.reduce((accumulator, group) => {
+    accumulator[group.role] = group;
+    return accumulator;
+  }, {});
+
+  for (const row of rows) {
+    const role = String(row.role || "").toLowerCase();
+    if (!partnerPayoutMap[role]) {
+      continue;
+    }
+
+    const balanceCredits = toInt(row.balance_credits);
+    partnerPayoutMap[role].users.push(buildPartnerPayoutUser(row));
+    partnerPayoutMap[role].partner_count += 1;
+    partnerPayoutMap[role].total_balance_credits += balanceCredits;
+  }
+
+  return partnerPayoutGroups;
+}
+
+async function fetchPartnerPayoutSummary() {
+  const result = await pool.query(
+    `
+      SELECT
+        u.id,
+        u.email,
+        LOWER(COALESCE(u.role, '')) AS role,
+        LOWER(COALESCE(u.status::text, '')) AS status,
+        w.balance_credits,
+        MAX(CASE WHEN um.key = 'first_name' THEN um.value END) AS first_name,
+        MAX(CASE WHEN um.key = 'last_name' THEN um.value END) AS last_name,
+        MAX(CASE WHEN um.key = 'profile_pic_url' THEN um.value END) AS profile_pic_url
+      FROM wallet w
+      JOIN users u ON u.id = w.user_id
+      LEFT JOIN user_metadata um
+        ON um.user_id = u.id
+       AND um.key IN ('first_name', 'last_name', 'profile_pic_url')
+      WHERE LOWER(COALESCE(u.role, '')) = ANY($1::text[])
+        AND w.balance_credits > 0
+      GROUP BY u.id, u.email, u.role, u.status, w.balance_credits
+      ORDER BY LOWER(COALESCE(u.role, '')) ASC, w.balance_credits DESC, u.id DESC
+    `,
+    [PARTNER_PAYOUT_ROLES],
+  );
+
+  const groups = buildPartnerPayoutGroups(result.rows);
+  const totalPayableCredits = groups.reduce(
+    (total, group) => total + toInt(group.total_balance_credits),
+    0,
+  );
+  const totalPartners = groups.reduce(
+    (total, group) => total + toInt(group.partner_count),
+    0,
+  );
+
+  return {
+    generated_at: new Date().toISOString(),
+    total_payable_credits: totalPayableCredits,
+    total_partners: totalPartners,
+    groups,
+  };
+}
+
 async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }) {
   const safeTimeZone = normalizeTimeZone(timeZone);
   const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
@@ -502,16 +572,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
   const ordersSummaryRow = ordersSummaryResult.rows[0] || {};
   const walletMovementRow = walletMovementResult.rows[0] || {};
   const sessionSummaryRow = sessionSummaryResult.rows[0] || {};
-  const partnerPayoutGroups = PARTNER_PAYOUT_ROLES.map((role) => ({
-    role,
-    partner_count: 0,
-    total_balance_credits: 0,
-    users: [],
-  }));
-  const partnerPayoutMap = partnerPayoutGroups.reduce((accumulator, group) => {
-    accumulator[group.role] = group;
-    return accumulator;
-  }, {});
+  const partnerPayoutGroups = buildPartnerPayoutGroups(partnerPayoutsResult.rows);
 
   const creditsAddedRows = walletTrendResult.rows.filter(
     (row) => String(row.direction || "") === "credit",
@@ -553,18 +614,6 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
 
   const totalSessionCreditsBilled = toInt(sessionSummaryRow.total_session_credits_billed);
   const billedSessionsCount = toInt(sessionSummaryRow.billed_sessions_count);
-
-  for (const row of partnerPayoutsResult.rows) {
-    const role = String(row.role || "").toLowerCase();
-    if (!partnerPayoutMap[role]) {
-      continue;
-    }
-
-    const balanceCredits = toInt(row.balance_credits);
-    partnerPayoutMap[role].users.push(buildPartnerPayoutUser(row));
-    partnerPayoutMap[role].partner_count += 1;
-    partnerPayoutMap[role].total_balance_credits += balanceCredits;
-  }
 
   return {
     range: safeRange,
@@ -675,4 +724,5 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
 
 module.exports = {
   fetchFinanceSummary,
+  fetchPartnerPayoutSummary,
 };

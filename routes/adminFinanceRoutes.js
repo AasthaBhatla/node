@@ -13,4 +13,11 @@ router.get(
   adminFinanceController.getSummary,
 );
 
+router.get(
+  "/partner-payouts",
+  authMiddleware,
+  requireAdmin(),
+  adminFinanceController.getPartnerPayoutSummary,
+);
+
 module.exports = router;
