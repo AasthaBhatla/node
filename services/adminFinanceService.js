@@ -1,5 +1,7 @@
 const pool = require("../db");
 
+const PARTNER_PAYOUT_ROLES = ["lawyer", "officer"];
+
 const RANGE_DAYS = {
   "1d": 1,
   "7d": 7,
@@ -244,6 +246,21 @@ function buildAdjustmentRecord(row) {
   };
 }
 
+function buildPartnerPayoutUser(row) {
+  return {
+    id: String(row.id || ""),
+    email: String(row.email || ""),
+    role: String(row.role || ""),
+    status: String(row.status || ""),
+    balance_credits: toInt(row.balance_credits),
+    metadata: {
+      first_name: String(row.first_name || ""),
+      last_name: String(row.last_name || ""),
+      profile_pic_url: String(row.profile_pic_url || ""),
+    },
+  };
+}
+
 async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }) {
   const safeTimeZone = normalizeTimeZone(timeZone);
   const { safeRange, dateFrom, dateTo, trendLabels } = resolveDateWindow({
@@ -259,6 +276,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
     walletMovementResult,
     walletBreakdownResult,
     sessionSummaryResult,
+    partnerPayoutsResult,
     recentAdjustmentsResult,
     paidOrderTrendResult,
     walletTrendResult,
@@ -329,6 +347,29 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
         FROM orders
       `,
       [dateFrom, dateTo],
+    ),
+    pool.query(
+      `
+        SELECT
+          u.id,
+          u.email,
+          LOWER(COALESCE(u.role, '')) AS role,
+          LOWER(COALESCE(u.status::text, '')) AS status,
+          w.balance_credits,
+          MAX(CASE WHEN um.key = 'first_name' THEN um.value END) AS first_name,
+          MAX(CASE WHEN um.key = 'last_name' THEN um.value END) AS last_name,
+          MAX(CASE WHEN um.key = 'profile_pic_url' THEN um.value END) AS profile_pic_url
+        FROM wallet w
+        JOIN users u ON u.id = w.user_id
+        LEFT JOIN user_metadata um
+          ON um.user_id = u.id
+         AND um.key IN ('first_name', 'last_name', 'profile_pic_url')
+        WHERE LOWER(COALESCE(u.role, '')) = ANY($1::text[])
+          AND w.balance_credits > 0
+        GROUP BY u.id, u.email, u.role, u.status, w.balance_credits
+        ORDER BY LOWER(COALESCE(u.role, '')) ASC, w.balance_credits DESC, u.id DESC
+      `,
+      [PARTNER_PAYOUT_ROLES],
     ),
     pool.query(
       `
@@ -461,6 +502,16 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
   const ordersSummaryRow = ordersSummaryResult.rows[0] || {};
   const walletMovementRow = walletMovementResult.rows[0] || {};
   const sessionSummaryRow = sessionSummaryResult.rows[0] || {};
+  const partnerPayoutGroups = PARTNER_PAYOUT_ROLES.map((role) => ({
+    role,
+    partner_count: 0,
+    total_balance_credits: 0,
+    users: [],
+  }));
+  const partnerPayoutMap = partnerPayoutGroups.reduce((accumulator, group) => {
+    accumulator[group.role] = group;
+    return accumulator;
+  }, {});
 
   const creditsAddedRows = walletTrendResult.rows.filter(
     (row) => String(row.direction || "") === "credit",
@@ -502,6 +553,18 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
 
   const totalSessionCreditsBilled = toInt(sessionSummaryRow.total_session_credits_billed);
   const billedSessionsCount = toInt(sessionSummaryRow.billed_sessions_count);
+
+  for (const row of partnerPayoutsResult.rows) {
+    const role = String(row.role || "").toLowerCase();
+    if (!partnerPayoutMap[role]) {
+      continue;
+    }
+
+    const balanceCredits = toInt(row.balance_credits);
+    partnerPayoutMap[role].users.push(buildPartnerPayoutUser(row));
+    partnerPayoutMap[role].partner_count += 1;
+    partnerPayoutMap[role].total_balance_credits += balanceCredits;
+  }
 
   return {
     range: safeRange,
@@ -555,6 +618,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
           ? Number((totalSessionCreditsBilled / billedSessionsCount).toFixed(2))
           : 0,
     },
+    partner_payouts: partnerPayoutGroups,
     admin_adjustments: {
       admin_credits_count: toInt(walletMovementRow.admin_credits_count),
       admin_credits_total: toInt(walletMovementRow.admin_credits_total),
