@@ -61,6 +61,7 @@ const expertConnectRoutes = require("./routes/expertConnectRoutes");
 const internalNotifications = require("./routes/internalNotifications");
 const adminWalletRoutes = require("./routes/adminWalletRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
+const adminFinanceRoutes = require("./routes/adminFinanceRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -91,6 +92,7 @@ app.use("/appointments", appointmentsRoutes);
 app.use("/admin/emails", adminEmailRoutes);
 app.use("/admin/wallet", adminWalletRoutes);
 app.use("/admin/dashboard", adminDashboardRoutes);
+app.use("/admin/finance", adminFinanceRoutes);
 app.use("/expert-connect", expertConnectRoutes);
 app.use("/internal/notifications", internalNotifications);
 
