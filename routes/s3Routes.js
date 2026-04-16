@@ -19,26 +19,29 @@ if (!REGION || !BUCKET) {
 
 const s3 = new S3Client({ region: REGION });
 
-/** Map allowed mime types to file extension */
-/** Map allowed mime types to file extension */
 const EXT_MAP = {
-  // Images
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",
-
-  // Documents
+  "image/svg+xml": "svg",
   "application/pdf": "pdf",
   "application/msword": "doc",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
     "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    "pptx",
   "text/plain": "txt",
+  "text/csv": "csv",
+  "application/zip": "zip",
+  "application/x-zip-compressed": "zip",
 
-  // Audio
-  "audio/mpeg": "mp3", // most common for mp3 uploads
-  "audio/mp3": "mp3", // non-standard, but allow if some client sends it
-  "audio/mp4": "m4a", // often used for .m4a
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
   "audio/x-m4a": "m4a",
   "audio/x-m4p": "m4p",
   "audio/wav": "wav",
@@ -53,7 +56,45 @@ const EXT_MAP = {
   "audio/3gpp": "3gp",
 };
 
-const ALLOWED_MIME = Object.keys(EXT_MAP);
+const MIME_BY_EXTENSION = Object.entries(EXT_MAP).reduce((record, [mime, ext]) => {
+  record[ext] = mime;
+  return record;
+}, {});
+
+function sanitizeExtension(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function extensionFromFilename(filename) {
+  return sanitizeExtension(String(filename || "").split(".").pop() || "");
+}
+
+function resolveUploadKind(contentType, filename) {
+  const safeType = String(contentType || "").trim().toLowerCase();
+  const safeFilenameExt = extensionFromFilename(filename);
+
+  if (EXT_MAP[safeType]) {
+    return {
+      mime: safeType,
+      ext: EXT_MAP[safeType],
+    };
+  }
+
+  if (safeFilenameExt && MIME_BY_EXTENSION[safeFilenameExt]) {
+    return {
+      mime:
+        safeType && safeType !== "application/octet-stream"
+          ? safeType
+          : MIME_BY_EXTENSION[safeFilenameExt],
+      ext: safeFilenameExt,
+    };
+  }
+
+  return null;
+}
 
 /** Build YYYY/MM/ path like your PHP */
 function folderByDate() {
@@ -81,23 +122,24 @@ function publicUrlForKey(key) {
  */
 router.post("/presign", async (req, res) => {
   try {
-    const { content_type, folder } = req.body || {};
-    const mime = content_type || "image/jpeg";
+    const { content_type, folder, filename } = req.body || {};
+    const uploadKind = resolveUploadKind(content_type, filename);
 
-    if (!ALLOWED_MIME.includes(mime)) {
+    if (!uploadKind) {
       return res.status(400).json({
         error: "invalid_mime",
-        message: `Only ${ALLOWED_MIME.join(", ")} allowed`,
+        message: "Unsupported upload type",
       });
     }
 
-    const ext = EXT_MAP[mime] || "bin";
+    const mime = uploadKind.mime;
+    const ext = uploadKind.ext;
     const rand = crypto.randomBytes(8).toString("hex");
 
     const baseFolder =
       typeof folder === "string" && folder.trim()
         ? folder.trim().replace(/^\/+/, "")
-        : "uploads/";
+        : "mobile/";
     const key = `${baseFolder}${folderByDate()}${rand}.${ext}`;
 
     const putCmd = new PutObjectCommand({
