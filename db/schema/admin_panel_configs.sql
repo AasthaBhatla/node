@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS admin_panel_configs (
+  config_key VARCHAR(50) PRIMARY KEY,
+  config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by_user_id INT REFERENCES users(id) ON DELETE SET NULL
+);
