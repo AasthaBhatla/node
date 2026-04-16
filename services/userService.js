@@ -893,6 +893,15 @@ const PUBLIC_META_KEYS = new Set([
   // add more safe keys here...
 ]);
 
+const PUBLIC_USER_ALLOWED_STATUSES = ["registered", "verified"];
+
+const PUBLIC_PROFILE_EXCLUDED_META_KEYS = new Set(["bookmark_user_ids", "dob"]);
+const PUBLIC_PROFILE_META_KEYS = new Set(
+  Array.from(PUBLIC_META_KEYS).filter(
+    (key) => !PUBLIC_PROFILE_EXCLUDED_META_KEYS.has(key),
+  ),
+);
+
 const FIND_USERS_PUBLIC_SORTS = Object.freeze({
   created_at: {
     join: "",
@@ -978,7 +987,7 @@ const findUsersPublic = async ({
   );
 
   // Public visibility rules
-  const allowedStatuses = ["registered", "verified"];
+  const allowedStatuses = PUBLIC_USER_ALLOWED_STATUSES;
 
   // roles: allow all except admin (and enforce even if caller sends it)
   const roleList = Array.isArray(user_types) ? user_types : [];
@@ -1311,6 +1320,57 @@ const findUsersPublic = async ({
   }
 };
 
+const getPublicUserById = async (userId) => {
+  const safeUserId = parseInt(userId, 10);
+  if (!Number.isFinite(safeUserId) || safeUserId < 1) {
+    return null;
+  }
+
+  const userRes = await pool.query(
+    `
+      SELECT
+        id,
+        role,
+        created_at,
+        language_id,
+        location_id
+      FROM users
+      WHERE id = $1
+        AND status = ANY($2::user_status[])
+        AND (role IS NULL OR LOWER(role) <> 'admin')
+      LIMIT 1
+    `,
+    [safeUserId, PUBLIC_USER_ALLOWED_STATUSES],
+  );
+
+  if (!userRes.rows.length) {
+    return null;
+  }
+
+  const metadataRes = await pool.query(
+    `
+      SELECT key, value
+      FROM user_metadata
+      WHERE user_id = $1
+        AND key = ANY($2::text[])
+    `,
+    [safeUserId, Array.from(PUBLIC_PROFILE_META_KEYS)],
+  );
+
+  const metadata = {};
+  for (const { key, value } of metadataRes.rows) {
+    metadata[key] = value;
+  }
+
+  const taxonomies = await getUserTaxonomies(safeUserId);
+
+  return {
+    ...userRes.rows[0],
+    metadata,
+    taxonomies,
+  };
+};
+
 const getUsersByIds = async (ids = []) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
@@ -1476,6 +1536,7 @@ module.exports = {
   searchUsers,
   getUsersByIds,
   findUsersPublic,
+  getPublicUserById,
   getUserDeviceTokens,
   getTokensByUserIds,
   getUserCardsByIds,

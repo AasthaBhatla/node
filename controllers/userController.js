@@ -23,6 +23,7 @@ const {
   searchUsers,
   getUsersByIds,
   findUsersPublic,
+  getPublicUserById: getPublicUserProfileById,
 } = require("../services/userService");
 const notifPrefs = require("../services/notificationPrefsService");
 
@@ -150,6 +151,26 @@ exports.getUserById = async (req, res) => {
   } catch (err) {
     console.error("Get user by ID error:", err);
     res.status(500).json({ error: "Server error" });
+  }
+};
+
+exports.getPublicUserById = async (req, res) => {
+  const user_id = parseInt(req.params.id, 10);
+
+  if (!Number.isFinite(user_id) || user_id < 1) {
+    return res.status(400).json({ error: "User ID must be a positive number" });
+  }
+
+  try {
+    const user = await getPublicUserProfileById(user_id);
+    if (!user) {
+      return res.status(404).json({ error: "Public user not found" });
+    }
+
+    return res.status(200).json(user);
+  } catch (err) {
+    console.error("Get public user by ID error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 };
 

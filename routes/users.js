@@ -13,10 +13,9 @@ router.post("/by-terms", userController.getUsersByTerms);
 router.get("/me", authMiddleware, userController.getMe);
 router.get("/search", authMiddleware, userController.searchUsers);
 router.post("/find", userController.findUsersPublic);
+router.get("/public/:id", userController.getPublicUserById);
 router.post("/me", authMiddleware, userController.updateMe);
 router.post("/", userController.getUsers);
-router.get("/:id", authMiddleware, userController.getUserById);
-router.post("/:id", authMiddleware, userController.updateUserMetaByAdmin);
 
 router.post(
   "/profile-picture",
@@ -32,18 +31,11 @@ router.post(
 );
 router.delete("/document/:id", authMiddleware, userController.deleteDocument);
 router.get("/documents/:id", authMiddleware, userController.listUserDocuments);
-router.delete("/:id", authMiddleware, userController.deleteUser);
 router.post(
   "/device-token",
   authMiddleware,
   userController.registerDeviceToken,
 );
-router.delete(
-  "/device-token",
-  authMiddleware,
-  userController.unregisterDeviceToken,
-);
-
 router.get(
   "/me/notification-prefs",
   authMiddleware,
@@ -54,5 +46,13 @@ router.post(
   authMiddleware,
   userController.updateMyNotificationPrefs,
 );
+router.delete(
+  "/device-token",
+  authMiddleware,
+  userController.unregisterDeviceToken,
+);
+router.get("/:id", authMiddleware, userController.getUserById);
+router.post("/:id", authMiddleware, userController.updateUserMetaByAdmin);
+router.delete("/:id", authMiddleware, userController.deleteUser);
 
 module.exports = router;
