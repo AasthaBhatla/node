@@ -426,7 +426,20 @@ exports.findUsersPublic = async (req, res) => {
       taxonomyRelation,
       metaFilters,
       metaRelation,
+      sortBy,
+      sortOrder,
     } = req.body || {};
+
+    const normalizedSortBy =
+      sortBy === undefined || sortBy === null || String(sortBy).trim() === ""
+        ? undefined
+        : String(sortBy).trim().toLowerCase();
+    const normalizedSortOrder =
+      sortOrder === undefined ||
+      sortOrder === null ||
+      String(sortOrder).trim() === ""
+        ? undefined
+        : String(sortOrder).trim().toUpperCase();
 
     // Basic validations
     if (page !== undefined && isNaN(parseInt(page, 10))) {
@@ -455,6 +468,22 @@ exports.findUsersPublic = async (req, res) => {
     if (metaFilters && !Array.isArray(metaFilters)) {
       return res.status(400).json({ error: "metaFilters must be an array" });
     }
+    if (
+      normalizedSortBy !== undefined &&
+      !["call", "chat", "experience"].includes(normalizedSortBy)
+    ) {
+      return res.status(400).json({
+        error: "sortBy must be one of: call, chat, experience",
+      });
+    }
+    if (
+      normalizedSortOrder !== undefined &&
+      !["ASC", "DESC"].includes(normalizedSortOrder)
+    ) {
+      return res.status(400).json({
+        error: "sortOrder must be ASC or DESC",
+      });
+    }
 
     const result = await require("../services/userService").findUsersPublic({
       keyword,
@@ -465,6 +494,8 @@ exports.findUsersPublic = async (req, res) => {
       taxonomyRelation,
       metaFilters,
       metaRelation,
+      sortBy: normalizedSortBy,
+      sortOrder: normalizedSortOrder,
     });
 
     // ✅ return clean structure

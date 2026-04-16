@@ -893,6 +893,69 @@ const PUBLIC_META_KEYS = new Set([
   // add more safe keys here...
 ]);
 
+const FIND_USERS_PUBLIC_SORTS = Object.freeze({
+  created_at: {
+    join: "",
+    expression: "u.created_at",
+    numeric: false,
+  },
+  call: {
+    join:
+      "LEFT JOIN user_metadata um_sort ON um_sort.user_id = u.id AND um_sort.key = 'call_charge'",
+    expression: "um_sort.value",
+    numeric: true,
+  },
+  chat: {
+    join:
+      "LEFT JOIN user_metadata um_sort ON um_sort.user_id = u.id AND um_sort.key = 'message_charge'",
+    expression: "um_sort.value",
+    numeric: true,
+  },
+  experience: {
+    join:
+      "LEFT JOIN user_metadata um_sort ON um_sort.user_id = u.id AND um_sort.key = 'experience'",
+    expression: "um_sort.value",
+    numeric: true,
+  },
+});
+
+const DEFAULT_FIND_USERS_PUBLIC_SORT_BY = "created_at";
+const DEFAULT_FIND_USERS_PUBLIC_SORT_ORDER = "DESC";
+
+function findUsersPublicSortClause(sortBy, sortOrder) {
+  const normalizedSortBy =
+    typeof sortBy === "string" && FIND_USERS_PUBLIC_SORTS[sortBy]
+      ? sortBy
+      : DEFAULT_FIND_USERS_PUBLIC_SORT_BY;
+  const normalizedSortOrder =
+    String(sortOrder || DEFAULT_FIND_USERS_PUBLIC_SORT_ORDER).toUpperCase() ===
+    "ASC"
+      ? "ASC"
+      : "DESC";
+  const sortConfig = FIND_USERS_PUBLIC_SORTS[normalizedSortBy];
+
+  if (!sortConfig.numeric) {
+    return {
+      join: sortConfig.join,
+      clause: `${sortConfig.expression} ${normalizedSortOrder}, u.id DESC`,
+    };
+  }
+
+  const numericExpression = `
+    CASE
+      WHEN NULLIF(BTRIM(${sortConfig.expression}), '') IS NULL THEN NULL
+      WHEN BTRIM(${sortConfig.expression}) ~ '^-?[0-9]+(\\.[0-9]+)?$'
+        THEN BTRIM(${sortConfig.expression})::numeric
+      ELSE NULL
+    END
+  `;
+
+  return {
+    join: sortConfig.join,
+    clause: `${numericExpression} ${normalizedSortOrder} NULLS LAST, u.created_at DESC, u.id DESC`,
+  };
+}
+
 const findUsersPublic = async ({
   keyword,
   page = 1,
@@ -902,11 +965,17 @@ const findUsersPublic = async ({
   taxonomyRelation = "AND",
   metaFilters = [],
   metaRelation = "AND",
+  sortBy = DEFAULT_FIND_USERS_PUBLIC_SORT_BY,
+  sortOrder = DEFAULT_FIND_USERS_PUBLIC_SORT_ORDER,
 } = {}) => {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimitRaw = Math.max(1, parseInt(limit, 10) || 10);
   const safeLimit = Math.min(safeLimitRaw, 50); // hard cap for public endpoint
   const offset = (safePage - 1) * safeLimit;
+  const { join: sortJoin, clause: sortClause } = findUsersPublicSortClause(
+    sortBy,
+    sortOrder,
+  );
 
   // Public visibility rules
   const allowedStatuses = ["registered", "verified"];
@@ -1129,7 +1198,7 @@ const findUsersPublic = async ({
   `;
 
   const usersQuery = `
-    SELECT DISTINCT
+    SELECT
       u.id,
       u.role,
       u.status,
@@ -1137,8 +1206,9 @@ const findUsersPublic = async ({
       u.language_id,
       u.location_id
     FROM users u
+    ${sortJoin}
     ${whereClause}
-    ORDER BY u.created_at DESC
+    ORDER BY ${sortClause}
     LIMIT $${i} OFFSET $${i + 1};
   `;
 

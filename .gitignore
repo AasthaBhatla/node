@@ -7,3 +7,6 @@ Dockerfile
 docker-compose.dev.yml
 Dockerfile.dev
 package-lock.json
+zohomailsample.json
+docker-compose-server.yaml
+package-lock.json
