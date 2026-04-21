@@ -1,5 +1,6 @@
 const {
   createTerms,
+  deleteTermById,
   getTermsByIds,
   getTermsByTaxonomyIds,
   updateTermsByIds,
@@ -104,6 +105,50 @@ exports.update = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+exports.remove = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || user.role.toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admins only.' });
+    }
+
+    const { id } = req.params;
+    const { confirm_slug: confirmSlug, child_policy: childPolicy = 'block' } = req.body ?? {};
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'A valid term id is required' });
+    }
+
+    if (!confirmSlug || typeof confirmSlug !== 'string') {
+      return res.status(400).json({ error: 'confirm_slug is required' });
+    }
+
+    if (!['block', 'orphan'].includes(childPolicy)) {
+      return res.status(400).json({ error: 'child_policy must be either block or orphan' });
+    }
+
+    const deleted = await deleteTermById({
+      id: Number(id),
+      confirmSlug,
+      childPolicy
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Term not found' });
+    }
+
+    return res.status(200).json(deleted);
+  } catch (err) {
+    console.error('Delete Term Error:', err);
+    return res.status(err.status || 500).json({
+      error: err.message || 'Internal server error',
+      code: err.code,
+      children_count: err.children_count
+    });
+  }
+};
+
 exports.getTermsBySlug = async (req, res) => {
   try {
     const { slug } = req.params;

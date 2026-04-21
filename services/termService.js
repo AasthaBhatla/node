@@ -138,6 +138,100 @@ const updateTermsByIds = async (terms) => {
     client.release();
   }
 };
+
+const deleteTermById = async ({ id, confirmSlug, childPolicy = 'block' }) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const {
+      rows: [existingTerm]
+    } = await client.query(
+      `SELECT id, taxonomy_id, slug, title
+       FROM terms
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!existingTerm) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    if (!confirmSlug || confirmSlug.trim() !== existingTerm.slug) {
+      const error = new Error('Confirmation slug does not match the selected term');
+      error.status = 400;
+      error.code = 'TERM_CONFIRM_SLUG_MISMATCH';
+      throw error;
+    }
+
+    const {
+      rows: [{ count: childrenCountRaw }]
+    } = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM terms
+       WHERE parent_id = $1`,
+      [id]
+    );
+    const childrenCount = Number(childrenCountRaw ?? 0);
+
+    if (childrenCount > 0 && childPolicy !== 'orphan') {
+      const error = new Error('Term has child terms and cannot be deleted until those child terms are reassigned or removed');
+      error.status = 409;
+      error.code = 'TERM_HAS_CHILDREN';
+      error.children_count = childrenCount;
+      throw error;
+    }
+
+    const {
+      rows: [{ count: relationshipsDeletedRaw }]
+    } = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM taxonomy_relationships
+       WHERE term_id = $1`,
+      [id]
+    );
+
+    const {
+      rows: [{ count: metadataDeletedRaw }]
+    } = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM term_metadata
+       WHERE term_id = $1`,
+      [id]
+    );
+
+    const {
+      rows: [deleted]
+    } = await client.query(
+      `DELETE FROM terms
+       WHERE id = $1
+       RETURNING id, taxonomy_id, slug, title`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      message: 'Term deleted successfully',
+      deleted,
+      effects: {
+        relationships_deleted: Number(relationshipsDeletedRaw ?? 0),
+        metadata_deleted: Number(metadataDeletedRaw ?? 0),
+        children_orphaned: childPolicy === 'orphan' ? childrenCount : 0
+      }
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error in deleteTermById:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 async function getTermsByTaxonomySlug(slug) {
   try {
     const query = `
@@ -197,6 +291,7 @@ const searchTerms = async (keyword) => {
 
 module.exports = {
   createTerms,
+  deleteTermById,
   getTermsByIds,
   getTermsByTaxonomyIds,
   getTermsByTaxonomySlug,
