@@ -10,6 +10,7 @@ This module is designed for multilingual SEO landing pages tied to taxonomy term
 - `service_page_translations`
   - one row per locale
   - stores content and SEO fields such as `title`, `slug`, `body_html`, `meta_title`, `meta_description`, `canonical_url`, and `is_indexable`
+  - `canonical_url` is treated as an optional override; the API also returns an effective self-canonical when no override is stored
 - `service_page_term_relationships`
   - additional taxonomy links for filtering/reporting
   - always includes the primary service term as part of the relationship set
@@ -50,7 +51,7 @@ Only `published` translations are returned from public endpoints.
       "featured_image_alt": "Marriage consultation service",
       "meta_title": "Marriage Consultation Lawyer Services",
       "meta_description": "Explore marriage consultation support and next legal steps.",
-      "canonical_url": "https://kaptaan.law/services/en/marriage-consultation",
+      "canonical_url": "",
       "og_title": "Marriage Consultation",
       "og_description": "Understand your options and legal support pathways.",
       "schema_json": {
@@ -69,6 +70,7 @@ Only `published` translations are returned from public endpoints.
 - `remove_locales` deletes locales by code
 - `related_term_ids` replaces the existing relationship set
 - `primary_service_term_id` updates the primary service term and is also kept inside the term relationship table
+- when `canonical_url` is blank, the API resolves the effective canonical to `PUBLIC_SITE_BASE_URL + SERVICE_PAGE_PUBLIC_PATH_PREFIX + /:locale/:slug`
 
 ## Report Filters
 

@@ -3,6 +3,12 @@ const pool = require("../db");
 const ALLOWED_STATUSES = new Set(["draft", "published", "archived"]);
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
+  process.env.PUBLIC_SITE_BASE_URL || "https://kaptaan.law",
+);
+const SERVICE_PAGE_PUBLIC_PATH_PREFIX = normalizePublicPathPrefix(
+  process.env.SERVICE_PAGE_PUBLIC_PATH_PREFIX || "/services",
+);
 
 function createValidationError(message, details) {
   const error = new Error(message);
@@ -20,6 +26,16 @@ function normalizeString(value) {
 function normalizeNullableString(value) {
   const text = normalizeString(value);
   return text === "" ? null : text;
+}
+
+function normalizePublicSiteBaseUrl(value) {
+  const normalized = normalizeString(value).replace(/\/+$/, "");
+  return normalized || "https://kaptaan.law";
+}
+
+function normalizePublicPathPrefix(value) {
+  const normalized = normalizeString(value).replace(/^\/+|\/+$/g, "");
+  return normalized ? `/${normalized}` : "";
 }
 
 function sanitizeLocale(value) {
@@ -112,6 +128,61 @@ function normalizeTimestamp(value) {
   }
 
   return parsed.toISOString();
+}
+
+function buildServicePagePublicPath(locale, slug) {
+  const safeLocale = sanitizeLocale(locale);
+  const safeSlug = sanitizeSlug(slug);
+
+  if (!safeLocale || !safeSlug) {
+    return null;
+  }
+
+  return `${SERVICE_PAGE_PUBLIC_PATH_PREFIX}/${encodeURIComponent(safeLocale)}/${encodeURIComponent(safeSlug)}`;
+}
+
+function buildServicePagePublicUrl(locale, slug) {
+  const path = buildServicePagePublicPath(locale, slug);
+  return path ? `${PUBLIC_SITE_BASE_URL}${path}` : null;
+}
+
+function resolveServicePageCanonicalUrl(locale, slug, overrideUrl) {
+  return normalizeNullableString(overrideUrl) || buildServicePagePublicUrl(locale, slug);
+}
+
+function serializeServicePageTranslationRow(translation) {
+  const canonicalOverrideUrl = normalizeNullableString(translation.canonical_url);
+  const publicUrl = buildServicePagePublicUrl(translation.locale, translation.slug);
+  const effectiveCanonicalUrl = resolveServicePageCanonicalUrl(
+    translation.locale,
+    translation.slug,
+    canonicalOverrideUrl,
+  );
+
+  return {
+    id: Number(translation.id),
+    service_page_id: Number(translation.service_page_id),
+    locale: translation.locale,
+    status: translation.status,
+    title: translation.title,
+    slug: translation.slug,
+    body_html: translation.body_html,
+    featured_image_url: translation.featured_image_url,
+    featured_image_alt: translation.featured_image_alt,
+    meta_title: translation.meta_title,
+    meta_description: translation.meta_description,
+    canonical_url: effectiveCanonicalUrl,
+    canonical_override_url: canonicalOverrideUrl,
+    effective_canonical_url: effectiveCanonicalUrl,
+    public_url: publicUrl,
+    og_title: translation.og_title,
+    og_description: translation.og_description,
+    schema_json: translation.schema_json,
+    is_indexable: translation.is_indexable,
+    published_at: translation.published_at,
+    created_at: translation.created_at,
+    updated_at: translation.updated_at,
+  };
 }
 
 function normalizeJsonValue(value) {
@@ -385,27 +456,7 @@ async function getServicePageById(id) {
       slug: term.slug,
       title: term.title,
     })),
-    translations: translationsResult.rows.map((translation) => ({
-      id: Number(translation.id),
-      service_page_id: Number(translation.service_page_id),
-      locale: translation.locale,
-      status: translation.status,
-      title: translation.title,
-      slug: translation.slug,
-      body_html: translation.body_html,
-      featured_image_url: translation.featured_image_url,
-      featured_image_alt: translation.featured_image_alt,
-      meta_title: translation.meta_title,
-      meta_description: translation.meta_description,
-      canonical_url: translation.canonical_url,
-      og_title: translation.og_title,
-      og_description: translation.og_description,
-      schema_json: translation.schema_json,
-      is_indexable: translation.is_indexable,
-      published_at: translation.published_at,
-      created_at: translation.created_at,
-      updated_at: translation.updated_at,
-    })),
+    translations: translationsResult.rows.map(serializeServicePageTranslationRow),
   };
 }
 
@@ -898,23 +949,10 @@ async function getPublicServicePageBySlug(locale, slug) {
             slug: row.primary_service_term_slug,
             title: row.primary_service_term_title,
           },
-    locale: row.locale,
-    status: row.status,
-    title: row.title,
-    slug: row.slug,
-    body_html: row.body_html,
-    featured_image_url: row.featured_image_url,
-    featured_image_alt: row.featured_image_alt,
-    meta_title: row.meta_title,
-    meta_description: row.meta_description,
-    canonical_url: row.canonical_url,
-    og_title: row.og_title,
-    og_description: row.og_description,
-    schema_json: row.schema_json,
-    is_indexable: row.is_indexable,
-    published_at: row.published_at,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    ...serializeServicePageTranslationRow({
+      ...row,
+      id: row.service_page_id,
+    }),
     terms: termsResult.rows.map((term) => ({
       id: Number(term.id),
       taxonomy_id: term.taxonomy_id === null ? null : Number(term.taxonomy_id),
