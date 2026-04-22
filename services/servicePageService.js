@@ -3,6 +3,11 @@ const pool = require("../db");
 const ALLOWED_STATUSES = new Set(["draft", "published", "archived"]);
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+const DEFAULT_SERVICE_PAGE_LOCALE = sanitizeLocale(
+  process.env.DEFAULT_SERVICE_PAGE_LOCALE || "en",
+) || "en";
+const PREFERRED_SERVICE_PAGE_LOCALE_ORDER_SQL =
+  `CASE WHEN spt.locale = '${DEFAULT_SERVICE_PAGE_LOCALE}' THEN 0 ELSE 1 END`;
 const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
   process.env.PUBLIC_SITE_BASE_URL || "https://kaptaan.law",
 );
@@ -136,34 +141,52 @@ function normalizeTimestamp(value) {
   return parsed.toISOString();
 }
 
-function buildServicePagePublicPath(locale, slug) {
-  const safeLocale = sanitizeLocale(locale);
+function buildServicePagePublicPath(slug) {
   const safeSlug = sanitizeSlug(slug);
 
-  if (!safeLocale || !safeSlug) {
+  if (!safeSlug) {
     return null;
   }
 
-  return `${SERVICE_PAGE_PUBLIC_PATH_PREFIX}/${encodeURIComponent(safeLocale)}/${encodeURIComponent(safeSlug)}`;
+  return `${SERVICE_PAGE_PUBLIC_PATH_PREFIX}/${encodeURIComponent(safeSlug)}`;
 }
 
-function buildServicePagePublicUrl(locale, slug) {
-  const path = buildServicePagePublicPath(locale, slug);
+function buildServicePagePublicUrl(slug) {
+  const path = buildServicePagePublicPath(slug);
   return path ? `${PUBLIC_SITE_BASE_URL}${path}` : null;
 }
 
-function resolveServicePageCanonicalUrl(locale, slug, overrideUrl) {
-  return normalizeNullableString(overrideUrl) || buildServicePagePublicUrl(locale, slug);
+function resolveServicePageCanonicalUrl(slug, overrideUrl) {
+  return normalizeNullableString(overrideUrl) || buildServicePagePublicUrl(slug);
+}
+
+function pickPrimaryTranslationInput(payload) {
+  if (payload?.translation && typeof payload.translation === "object" && !Array.isArray(payload.translation)) {
+    return payload.translation;
+  }
+
+  if (!Array.isArray(payload?.translations)) {
+    return null;
+  }
+
+  const candidates = payload.translations.filter(
+    (translation) => translation && typeof translation === "object" && !Array.isArray(translation),
+  );
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  return (
+    candidates.find((translation) => sanitizeLocale(translation.locale) === DEFAULT_SERVICE_PAGE_LOCALE)
+    || candidates[0]
+  );
 }
 
 function serializeServicePageTranslationRow(translation, { primaryServiceTerm = null } = {}) {
   const canonicalOverrideUrl = normalizeNullableString(translation.canonical_url);
-  const publicUrl = buildServicePagePublicUrl(translation.locale, translation.slug);
-  const effectiveCanonicalUrl = resolveServicePageCanonicalUrl(
-    translation.locale,
-    translation.slug,
-    canonicalOverrideUrl,
-  );
+  const publicUrl = buildServicePagePublicUrl(translation.slug);
+  const effectiveCanonicalUrl = resolveServicePageCanonicalUrl(translation.slug, canonicalOverrideUrl);
   const schemaOverrideJson = translation.schema_json ?? null;
   const generatedSchemaJson = buildGeneratedServicePageSchema(
     {
@@ -288,7 +311,6 @@ function buildGeneratedServicePageSchema(translation, { primaryServiceTerm = nul
   }
 
   const url = resolveServicePageCanonicalUrl(
-    translation.locale,
     translation.slug,
     translation.canonical_url,
   );
@@ -305,7 +327,7 @@ function buildGeneratedServicePageSchema(translation, { primaryServiceTerm = nul
       name: PUBLIC_ORGANIZATION_NAME || "Kaptaan",
       url: PUBLIC_SITE_BASE_URL,
     },
-    inLanguage: translation.locale,
+    inLanguage: translation.locale || DEFAULT_SERVICE_PAGE_LOCALE,
   };
 
   if (description) {
@@ -339,12 +361,12 @@ function normalizeStatus(value, fallback = "draft") {
   return status;
 }
 
-function normalizeTranslationInput(raw, { requireLocaleAndSlug = true } = {}) {
+function normalizeTranslationInput(raw, { requireSlug = true } = {}) {
   if (!raw || typeof raw !== "object") {
-    throw createValidationError("Each translation must be an object");
+    throw createValidationError("Translation is required");
   }
 
-  const locale = sanitizeLocale(raw.locale);
+  const locale = DEFAULT_SERVICE_PAGE_LOCALE;
   const title = normalizeString(raw.title);
   const slug = sanitizeSlug(raw.slug);
   const status = normalizeStatus(raw.status, "draft");
@@ -353,11 +375,7 @@ function normalizeTranslationInput(raw, { requireLocaleAndSlug = true } = {}) {
       ? normalizeTimestamp(raw.published_at) || new Date().toISOString()
       : normalizeTimestamp(raw.published_at);
 
-  if (requireLocaleAndSlug && !locale) {
-    throw createValidationError("Translation locale is required");
-  }
-
-  if (requireLocaleAndSlug && !slug) {
+  if (requireSlug && !slug) {
     throw createValidationError("Translation slug is required");
   }
 
@@ -535,8 +553,10 @@ async function getServicePageById(id) {
          updated_at
        FROM service_page_translations
        WHERE service_page_id = $1
-       ORDER BY locale ASC`,
-      [id],
+       ORDER BY CASE WHEN locale = $2 THEN 0 ELSE 1 END ASC,
+                updated_at DESC,
+                id DESC`,
+      [id, DEFAULT_SERVICE_PAGE_LOCALE],
     ),
     pool.query(
       `SELECT
@@ -551,6 +571,8 @@ async function getServicePageById(id) {
       [id],
     ),
   ]);
+
+  const primaryTranslation = translationsResult.rows[0] || null;
 
   return {
     id: Number(page.id),
@@ -578,18 +600,20 @@ async function getServicePageById(id) {
       slug: term.slug,
       title: term.title,
     })),
-    translations: translationsResult.rows.map((translation) =>
-      serializeServicePageTranslationRow(translation, {
-        primaryServiceTerm:
-          page.primary_service_term_id === null
-            ? null
-            : {
-                id: Number(page.primary_service_term_id),
-                slug: page.primary_service_term_slug,
-                title: page.primary_service_term_title,
-              },
-      })
-    ),
+    translations: primaryTranslation
+      ? [
+          serializeServicePageTranslationRow(primaryTranslation, {
+            primaryServiceTerm:
+              page.primary_service_term_id === null
+                ? null
+                : {
+                    id: Number(page.primary_service_term_id),
+                    slug: page.primary_service_term_slug,
+                    title: page.primary_service_term_title,
+                  },
+          }),
+        ]
+      : [],
   };
 }
 
@@ -601,17 +625,11 @@ async function createServicePage(payload, user) {
 
   const pageKind = sanitizePageKind(payload?.page_kind);
   const relatedTermIds = normalizeIntegerArray(payload?.related_term_ids);
-  const translations = Array.isArray(payload?.translations)
-    ? payload.translations.map((translation) => normalizeTranslationInput(translation))
-    : [];
+  const translationInput = pickPrimaryTranslationInput(payload);
+  const translation = translationInput ? normalizeTranslationInput(translationInput) : null;
 
-  if (!translations.length) {
-    throw createValidationError("At least one translation is required");
-  }
-
-  const locales = new Set(translations.map((translation) => translation.locale));
-  if (locales.size !== translations.length) {
-    throw createValidationError("Each translation locale must be unique per service page");
+  if (!translation) {
+    throw createValidationError("A single service-page content entry is required");
   }
 
   const client = await pool.connect();
@@ -630,9 +648,7 @@ async function createServicePage(payload, user) {
 
     await syncServicePageTerms(client, servicePageId, primaryServiceTermId, relatedTermIds);
 
-    for (const translation of translations) {
-      await upsertTranslation(client, servicePageId, translation);
-    }
+    await upsertTranslation(client, servicePageId, translation);
 
     await client.query("COMMIT");
     return getServicePageById(servicePageId);
@@ -670,23 +686,13 @@ async function updateServicePage(id, payload) {
       ? currentRelatedTermIds
       : normalizeIntegerArray(payload.related_term_ids);
 
-  const translations =
-    payload?.translations === undefined
-      ? []
-      : (Array.isArray(payload.translations) ? payload.translations : []).map((translation) =>
-          normalizeTranslationInput(translation),
-        );
-  const removedLocales = normalizeTextArray(payload?.remove_locales).map((locale) =>
-    sanitizeLocale(locale),
-  );
+  const hasTranslationInput =
+    payload?.translation !== undefined || payload?.translations !== undefined;
+  const translationInput = hasTranslationInput ? pickPrimaryTranslationInput(payload) : null;
+  const translation = translationInput ? normalizeTranslationInput(translationInput) : null;
 
-  if (payload?.translations !== undefined && translations.length === 0 && removedLocales.length === 0) {
-    throw createValidationError("translations must be a non-empty array when provided");
-  }
-
-  const locales = new Set(translations.map((translation) => translation.locale));
-  if (locales.size !== translations.length) {
-    throw createValidationError("Each translation locale must be unique per service page");
+  if (hasTranslationInput && !translation) {
+    throw createValidationError("translation must be provided when updating page content");
   }
 
   const client = await pool.connect();
@@ -705,17 +711,15 @@ async function updateServicePage(id, payload) {
 
     await syncServicePageTerms(client, id, nextPrimaryServiceTermId, nextRelatedTermIds);
 
-    if (removedLocales.length > 0) {
+    if (translation) {
+      await upsertTranslation(client, id, translation);
+
       await client.query(
         `DELETE FROM service_page_translations
          WHERE service_page_id = $1
-           AND locale = ANY($2::text[])`,
-        [id, removedLocales],
+           AND locale <> $2`,
+        [id, DEFAULT_SERVICE_PAGE_LOCALE],
       );
-    }
-
-    for (const translation of translations) {
-      await upsertTranslation(client, id, translation);
     }
 
     const translationCountResult = await client.query(
@@ -753,12 +757,6 @@ async function deleteServicePage(id) {
 function buildReportFilters(filters = {}) {
   const values = [];
   const conditions = [];
-
-  const locales = normalizeTextArray(filters.locales).map((locale) => sanitizeLocale(locale));
-  if (locales.length > 0) {
-    values.push(locales);
-    conditions.push(`spt.locale = ANY($${values.length}::text[])`);
-  }
 
   const statuses = normalizeTextArray(filters.statuses).map((status) =>
     normalizeStatus(status, "draft"),
@@ -923,7 +921,28 @@ async function reportServicePages(filters = {}) {
         '{}'
       ) AS term_ids,
       COUNT(*) OVER()::int AS total_count
-    FROM service_page_translations spt
+    FROM (
+      SELECT DISTINCT ON (spt.service_page_id)
+        spt.id,
+        spt.service_page_id,
+        spt.locale,
+        spt.status,
+        spt.title,
+        spt.slug,
+        spt.meta_title,
+        spt.meta_description,
+        spt.featured_image_url,
+        spt.is_indexable,
+        spt.published_at,
+        spt.created_at,
+        spt.updated_at
+      FROM service_page_translations spt
+      ORDER BY
+        spt.service_page_id ASC,
+        ${PREFERRED_SERVICE_PAGE_LOCALE_ORDER_SQL} ASC,
+        spt.updated_at DESC,
+        spt.id DESC
+    ) spt
     JOIN service_pages sp ON sp.id = spt.service_page_id
     LEFT JOIN terms primary_term ON primary_term.id = sp.primary_service_term_id
     ${whereSql}
@@ -973,7 +992,28 @@ async function getServicePageReportSummary(filters = {}) {
       COUNT(*) FILTER (WHERE COALESCE(BTRIM(spt.featured_image_url), '') = '')::int AS missing_featured_image_count,
       COUNT(*) FILTER (WHERE COALESCE(BTRIM(spt.meta_title), '') = '')::int AS missing_meta_title_count,
       COUNT(*) FILTER (WHERE COALESCE(BTRIM(spt.meta_description), '') = '')::int AS missing_meta_description_count
-    FROM service_page_translations spt
+    FROM (
+      SELECT DISTINCT ON (spt.service_page_id)
+        spt.id,
+        spt.service_page_id,
+        spt.locale,
+        spt.status,
+        spt.title,
+        spt.slug,
+        spt.meta_title,
+        spt.meta_description,
+        spt.featured_image_url,
+        spt.is_indexable,
+        spt.published_at,
+        spt.created_at,
+        spt.updated_at
+      FROM service_page_translations spt
+      ORDER BY
+        spt.service_page_id ASC,
+        ${PREFERRED_SERVICE_PAGE_LOCALE_ORDER_SQL} ASC,
+        spt.updated_at DESC,
+        spt.id DESC
+    ) spt
     JOIN service_pages sp ON sp.id = spt.service_page_id
     ${whereSql}
   `;
@@ -983,7 +1023,28 @@ async function getServicePageReportSummary(filters = {}) {
       spt.locale,
       spt.status,
       COUNT(*)::int AS total
-    FROM service_page_translations spt
+    FROM (
+      SELECT DISTINCT ON (spt.service_page_id)
+        spt.id,
+        spt.service_page_id,
+        spt.locale,
+        spt.status,
+        spt.title,
+        spt.slug,
+        spt.meta_title,
+        spt.meta_description,
+        spt.featured_image_url,
+        spt.is_indexable,
+        spt.published_at,
+        spt.created_at,
+        spt.updated_at
+      FROM service_page_translations spt
+      ORDER BY
+        spt.service_page_id ASC,
+        ${PREFERRED_SERVICE_PAGE_LOCALE_ORDER_SQL} ASC,
+        spt.updated_at DESC,
+        spt.id DESC
+    ) spt
     JOIN service_pages sp ON sp.id = spt.service_page_id
     ${whereSql}
     GROUP BY spt.locale, spt.status
@@ -1011,11 +1072,10 @@ async function getServicePageReportSummary(filters = {}) {
   };
 }
 
-async function getPublicServicePageBySlug(locale, slug) {
-  const safeLocale = sanitizeLocale(locale);
+async function getPublicServicePageBySlug(slug) {
   const safeSlug = sanitizeSlug(slug);
 
-  if (!safeLocale || !safeSlug) {
+  if (!safeSlug) {
     return null;
   }
 
@@ -1046,11 +1106,14 @@ async function getPublicServicePageBySlug(locale, slug) {
      FROM service_page_translations spt
      JOIN service_pages sp ON sp.id = spt.service_page_id
      LEFT JOIN terms primary_term ON primary_term.id = sp.primary_service_term_id
-     WHERE spt.locale = $1
-       AND spt.slug = $2
+     WHERE spt.slug = $1
        AND spt.status = 'published'
+     ORDER BY
+       CASE WHEN spt.locale = $2 THEN 0 ELSE 1 END ASC,
+       spt.updated_at DESC,
+       spt.id DESC
      LIMIT 1`,
-    [safeLocale, safeSlug],
+    [safeSlug, DEFAULT_SERVICE_PAGE_LOCALE],
   );
 
   const row = result.rows[0];
@@ -1108,22 +1171,14 @@ async function getPublicServicePageBySlug(locale, slug) {
 }
 
 async function listPublicServicePages(filters = {}) {
-  const safeLocale = sanitizeLocale(filters.locale || "en");
-  if (!safeLocale) {
-    throw createValidationError("locale is required");
-  }
-
   const limit = normalizeLimit(filters.limit);
   const offset = normalizeOffset(filters.offset);
   const pageKind = filters.page_kind ? sanitizePageKind(filters.page_kind) : null;
   const termId = Number.parseInt(filters.term_id, 10);
   const search = normalizeString(filters.search);
 
-  const values = [safeLocale];
-  const conditions = [
-    `spt.locale = $1`,
-    `spt.status = 'published'`,
-  ];
+  const values = [];
+  const conditions = [`spt.status = 'published'`];
 
   if (pageKind) {
     values.push(pageKind);
@@ -1169,7 +1224,27 @@ async function listPublicServicePages(filters = {}) {
       primary_term.slug AS primary_service_term_slug,
       primary_term.title AS primary_service_term_title,
       COUNT(*) OVER()::int AS total_count
-    FROM service_page_translations spt
+    FROM (
+      SELECT DISTINCT ON (spt.service_page_id)
+        spt.service_page_id,
+        spt.locale,
+        spt.status,
+        spt.title,
+        spt.slug,
+        spt.meta_title,
+        spt.meta_description,
+        spt.featured_image_url,
+        spt.published_at,
+        spt.updated_at,
+        spt.id
+      FROM service_page_translations spt
+      WHERE spt.status = 'published'
+      ORDER BY
+        spt.service_page_id ASC,
+        ${PREFERRED_SERVICE_PAGE_LOCALE_ORDER_SQL} ASC,
+        COALESCE(spt.published_at, spt.updated_at) DESC,
+        spt.id DESC
+    ) spt
     JOIN service_pages sp ON sp.id = spt.service_page_id
     LEFT JOIN terms primary_term ON primary_term.id = sp.primary_service_term_id
     WHERE ${conditions.join(" AND ")}

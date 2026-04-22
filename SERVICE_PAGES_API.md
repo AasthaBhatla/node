@@ -1,6 +1,6 @@
 # Service Pages API
 
-This module is designed for multilingual SEO landing pages tied to taxonomy terms.
+This module is designed for single-language SEO landing pages tied to taxonomy terms.
 
 ## Schema
 
@@ -8,7 +8,7 @@ This module is designed for multilingual SEO landing pages tied to taxonomy term
   - root record for a service page family
   - stores `primary_service_term_id`, `page_kind`, and author/timestamps
 - `service_page_translations`
-  - one row per locale
+  - one row per page for now, with a single implicit locale handled by the API
   - stores content and SEO fields such as `title`, `slug`, `body_html`, `meta_title`, `meta_description`, `canonical_url`, and `is_indexable`
   - `canonical_url` is treated as an optional override; the API also returns an effective self-canonical when no override is stored
   - `schema_json` is treated as an optional JSON-LD override; the API also returns generated and effective schema payloads for service pages
@@ -29,10 +29,10 @@ All admin endpoints require an authenticated admin token.
 
 ## Public Endpoints
 
-- `GET /service-pages/public?locale=en&term_id=123&page_kind=primary&limit=20&offset=0`
-- `GET /service-pages/public/en/divorce-consultation`
+- `GET /service-pages/public?term_id=123&page_kind=primary&limit=20&offset=0`
+- `GET /service-pages/public/divorce-consultation`
 
-Only `published` translations are returned from public endpoints.
+Only `published` service pages are returned from public endpoints.
 
 ## Create Payload
 
@@ -41,35 +41,32 @@ Only `published` translations are returned from public endpoints.
   "primary_service_term_id": 78,
   "page_kind": "primary",
   "related_term_ids": [77, 142],
-  "translations": [
-    {
-      "locale": "en",
-      "status": "published",
-      "title": "Marriage Consultation",
-      "slug": "marriage-consultation",
-      "body_html": "<p>Detailed SEO content here</p>",
-      "featured_image_url": "https://cdn.example.com/marriage.jpg",
-      "featured_image_alt": "Marriage consultation service",
-      "meta_title": "Marriage Consultation Lawyer Services",
-      "meta_description": "Explore marriage consultation support and next legal steps.",
-      "canonical_url": "",
-      "og_title": "Marriage Consultation",
-      "og_description": "Understand your options and legal support pathways.",
-      "schema_json": "",
-      "is_indexable": true
-    }
-  ]
+  "translation": {
+    "status": "published",
+    "title": "Marriage Consultation",
+    "slug": "marriage-consultation",
+    "body_html": "<p>Detailed SEO content here</p>",
+    "featured_image_url": "https://cdn.example.com/marriage.jpg",
+    "featured_image_alt": "Marriage consultation service",
+    "meta_title": "Marriage Consultation Lawyer Services",
+    "meta_description": "Explore marriage consultation support and next legal steps.",
+    "canonical_url": "",
+    "og_title": "Marriage Consultation",
+    "og_description": "Understand your options and legal support pathways.",
+    "schema_json": "",
+    "is_indexable": true
+  }
 }
 ```
 
 ## Update Notes
 
-- `translations` upserts by locale
-- `remove_locales` deletes locales by code
+- `translation` upserts the single active content record
+- the API also accepts the old `translations` array shape temporarily and will pick the primary/default entry
 - `related_term_ids` replaces the existing relationship set
 - `primary_service_term_id` updates the primary service term and is also kept inside the term relationship table
-- when `canonical_url` is blank, the API resolves the effective canonical to `PUBLIC_SITE_BASE_URL + SERVICE_PAGE_PUBLIC_PATH_PREFIX + /:locale/:slug`
-- when `schema_json` is blank, the API generates a default `Service` JSON-LD payload using the title, description, canonical URL, image, locale, and primary service term
+- when `canonical_url` is blank, the API resolves the effective canonical to `PUBLIC_SITE_BASE_URL + SERVICE_PAGE_PUBLIC_PATH_PREFIX + /:slug`
+- when `schema_json` is blank, the API generates a default `Service` JSON-LD payload using the title, description, canonical URL, image, and primary service term
 - translation responses expose `schema_override_json`, `generated_schema_json`, and `effective_schema_json`
 
 ## Report Filters
@@ -78,7 +75,6 @@ Only `published` translations are returned from public endpoints.
 
 ```json
 {
-  "locales": ["en", "hi"],
   "statuses": ["draft", "published"],
   "page_kinds": ["primary"],
   "primary_service_term_ids": [78],

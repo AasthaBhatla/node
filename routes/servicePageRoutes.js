@@ -7,7 +7,7 @@ const servicePageController = require("../controllers/servicePageController");
 const router = express.Router();
 
 router.get("/public", servicePageController.publicList);
-router.get("/public/:locale/:slug", servicePageController.publicBySlug);
+router.get("/public/:slug", servicePageController.publicBySlug);
 
 router.use(authMiddleware, requireAdmin());
 

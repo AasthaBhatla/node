@@ -12,7 +12,7 @@ const {
 function handleError(res, error, fallbackMessage) {
   if (error?.code === "23505") {
     return res.status(409).json({
-      error: "A translation with this locale and slug already exists",
+      error: "A service page with this slug already exists",
       detail: error.detail || null,
     });
   }
@@ -108,7 +108,7 @@ exports.publicList = async (req, res) => {
 
 exports.publicBySlug = async (req, res) => {
   try {
-    const record = await getPublicServicePageBySlug(req.params.locale, req.params.slug);
+    const record = await getPublicServicePageBySlug(req.params.slug);
     if (!record) {
       return res.status(404).json({ error: "Published service page not found" });
     }
