@@ -11,6 +11,7 @@ This module is designed for multilingual SEO landing pages tied to taxonomy term
   - one row per locale
   - stores content and SEO fields such as `title`, `slug`, `body_html`, `meta_title`, `meta_description`, `canonical_url`, and `is_indexable`
   - `canonical_url` is treated as an optional override; the API also returns an effective self-canonical when no override is stored
+  - `schema_json` is treated as an optional JSON-LD override; the API also returns generated and effective schema payloads for service pages
 - `service_page_term_relationships`
   - additional taxonomy links for filtering/reporting
   - always includes the primary service term as part of the relationship set
@@ -54,10 +55,7 @@ Only `published` translations are returned from public endpoints.
       "canonical_url": "",
       "og_title": "Marriage Consultation",
       "og_description": "Understand your options and legal support pathways.",
-      "schema_json": {
-        "@context": "https://schema.org",
-        "@type": "Service"
-      },
+      "schema_json": "",
       "is_indexable": true
     }
   ]
@@ -71,6 +69,8 @@ Only `published` translations are returned from public endpoints.
 - `related_term_ids` replaces the existing relationship set
 - `primary_service_term_id` updates the primary service term and is also kept inside the term relationship table
 - when `canonical_url` is blank, the API resolves the effective canonical to `PUBLIC_SITE_BASE_URL + SERVICE_PAGE_PUBLIC_PATH_PREFIX + /:locale/:slug`
+- when `schema_json` is blank, the API generates a default `Service` JSON-LD payload using the title, description, canonical URL, image, locale, and primary service term
+- translation responses expose `schema_override_json`, `generated_schema_json`, and `effective_schema_json`
 
 ## Report Filters
 

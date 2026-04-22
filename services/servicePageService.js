@@ -9,6 +9,12 @@ const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
 const SERVICE_PAGE_PUBLIC_PATH_PREFIX = normalizePublicPathPrefix(
   process.env.SERVICE_PAGE_PUBLIC_PATH_PREFIX || "/services",
 );
+const PUBLIC_ORGANIZATION_NAME = normalizeString(
+  process.env.PUBLIC_ORGANIZATION_NAME || "Kaptaan",
+);
+const SERVICE_PAGE_AREA_SERVED = normalizeString(
+  process.env.SERVICE_PAGE_AREA_SERVED || "India",
+);
 
 function createValidationError(message, details) {
   const error = new Error(message);
@@ -150,7 +156,7 @@ function resolveServicePageCanonicalUrl(locale, slug, overrideUrl) {
   return normalizeNullableString(overrideUrl) || buildServicePagePublicUrl(locale, slug);
 }
 
-function serializeServicePageTranslationRow(translation) {
+function serializeServicePageTranslationRow(translation, { primaryServiceTerm = null } = {}) {
   const canonicalOverrideUrl = normalizeNullableString(translation.canonical_url);
   const publicUrl = buildServicePagePublicUrl(translation.locale, translation.slug);
   const effectiveCanonicalUrl = resolveServicePageCanonicalUrl(
@@ -158,6 +164,15 @@ function serializeServicePageTranslationRow(translation) {
     translation.slug,
     canonicalOverrideUrl,
   );
+  const schemaOverrideJson = translation.schema_json ?? null;
+  const generatedSchemaJson = buildGeneratedServicePageSchema(
+    {
+      ...translation,
+      canonical_url: canonicalOverrideUrl,
+    },
+    { primaryServiceTerm },
+  );
+  const effectiveSchemaJson = schemaOverrideJson ?? generatedSchemaJson;
 
   return {
     id: Number(translation.id),
@@ -177,7 +192,10 @@ function serializeServicePageTranslationRow(translation) {
     public_url: publicUrl,
     og_title: translation.og_title,
     og_description: translation.og_description,
-    schema_json: translation.schema_json,
+    schema_json: effectiveSchemaJson,
+    schema_override_json: schemaOverrideJson,
+    generated_schema_json: generatedSchemaJson,
+    effective_schema_json: effectiveSchemaJson,
     is_indexable: translation.is_indexable,
     published_at: translation.published_at,
     created_at: translation.created_at,
@@ -207,6 +225,110 @@ function normalizeJsonValue(value) {
   }
 
   throw createValidationError("schema_json must be a JSON object, array, or string");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function stripHtmlToText(value) {
+  const raw = String(value ?? "");
+  const withoutTags = raw
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ");
+
+  return normalizeString(decodeHtmlEntities(withoutTags).replace(/\s+/g, " "));
+}
+
+function truncateText(value, maxLength = 320) {
+  const text = normalizeString(value);
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function normalizeImageUrl(value) {
+  const imageUrl = normalizeNullableString(value);
+  if (!imageUrl) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(imageUrl)) {
+    return imageUrl;
+  }
+
+  if (imageUrl.startsWith("/")) {
+    return `${PUBLIC_SITE_BASE_URL}${imageUrl}`;
+  }
+
+  return imageUrl;
+}
+
+function buildServicePageDescription(translation) {
+  return (
+    normalizeNullableString(translation.meta_description)
+    || truncateText(stripHtmlToText(translation.body_html), 320)
+    || null
+  );
+}
+
+function buildGeneratedServicePageSchema(translation, { primaryServiceTerm = null } = {}) {
+  const title = normalizeString(translation.title);
+  if (!title) {
+    return null;
+  }
+
+  const url = resolveServicePageCanonicalUrl(
+    translation.locale,
+    translation.slug,
+    translation.canonical_url,
+  );
+  const description = buildServicePageDescription(translation);
+  const imageUrl = normalizeImageUrl(translation.featured_image_url);
+  const serviceType = normalizeString(primaryServiceTerm?.title || title);
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: title,
+    serviceType,
+    provider: {
+      "@type": "Organization",
+      name: PUBLIC_ORGANIZATION_NAME || "Kaptaan",
+      url: PUBLIC_SITE_BASE_URL,
+    },
+    inLanguage: translation.locale,
+  };
+
+  if (description) {
+    schema.description = description;
+  }
+
+  if (SERVICE_PAGE_AREA_SERVED) {
+    schema.areaServed = {
+      "@type": "Country",
+      name: SERVICE_PAGE_AREA_SERVED,
+    };
+  }
+
+  if (url) {
+    schema.url = url;
+    schema.mainEntityOfPage = url;
+  }
+
+  if (imageUrl) {
+    schema.image = imageUrl;
+  }
+
+  return schema;
 }
 
 function normalizeStatus(value, fallback = "draft") {
@@ -456,7 +578,18 @@ async function getServicePageById(id) {
       slug: term.slug,
       title: term.title,
     })),
-    translations: translationsResult.rows.map(serializeServicePageTranslationRow),
+    translations: translationsResult.rows.map((translation) =>
+      serializeServicePageTranslationRow(translation, {
+        primaryServiceTerm:
+          page.primary_service_term_id === null
+            ? null
+            : {
+                id: Number(page.primary_service_term_id),
+                slug: page.primary_service_term_slug,
+                title: page.primary_service_term_title,
+              },
+      })
+    ),
   };
 }
 
@@ -949,10 +1082,22 @@ async function getPublicServicePageBySlug(locale, slug) {
             slug: row.primary_service_term_slug,
             title: row.primary_service_term_title,
           },
-    ...serializeServicePageTranslationRow({
-      ...row,
-      id: row.service_page_id,
-    }),
+    ...serializeServicePageTranslationRow(
+      {
+        ...row,
+        id: row.service_page_id,
+      },
+      {
+        primaryServiceTerm:
+          row.primary_service_term_id === null
+            ? null
+            : {
+                id: Number(row.primary_service_term_id),
+                slug: row.primary_service_term_slug,
+                title: row.primary_service_term_title,
+              },
+      },
+    ),
     terms: termsResult.rows.map((term) => ({
       id: Number(term.id),
       taxonomy_id: term.taxonomy_id === null ? null : Number(term.taxonomy_id),
