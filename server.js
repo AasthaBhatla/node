@@ -63,7 +63,8 @@ const adminWalletRoutes = require("./routes/adminWalletRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
 const adminFinanceRoutes = require("./routes/adminFinanceRoutes");
 const adminConfigRoutes = require("./routes/adminConfigRoutes");
-const servicePageRoutes = require("./routes/servicePageRoutes");
+const serviceRoutes = require("./routes/serviceRoutes");
+const serviceRequestRoutes = require("./routes/serviceRequestRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -98,7 +99,8 @@ app.use("/admin/finance", adminFinanceRoutes);
 app.use("/admin/config", adminConfigRoutes);
 app.use("/expert-connect", expertConnectRoutes);
 app.use("/internal/notifications", internalNotifications);
-app.use("/service-pages", servicePageRoutes);
+app.use("/services", serviceRoutes);
+app.use("/service-requests", serviceRequestRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

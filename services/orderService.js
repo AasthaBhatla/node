@@ -1,5 +1,6 @@
 const pool = require("../db");
 const razorpay = require("../utils/razorpay");
+const { markServiceRequestPaymentCancelledByOrderId } = require("./serviceRequestService");
 
 const assertPosInt = (v) => Number.isInteger(v) && v > 0;
 
@@ -130,9 +131,9 @@ const createOrder = async (userId, orderData) => {
       // Insert order
       const orderRes = await client.query(
         `INSERT INTO orders (
-            user_id, status, total_amount_paise, credits_to_grant, payment_provider
+            user_id, status, total_amount_paise, credits_to_grant, payment_provider, order_mode
          )
-         VALUES ($1, $2, $3, $4, 'razorpay')
+         VALUES ($1, $2, $3, $4, 'razorpay', 'product')
          RETURNING *`,
         [
           userIdParsed,
@@ -185,9 +186,9 @@ const createOrder = async (userId, orderData) => {
       const orderRes = await client.query(
         `INSERT INTO orders (
       user_id, status, total_amount_paise, credits_to_grant,
-      direct_amount_paise, order_note, payment_provider
+      direct_amount_paise, order_note, payment_provider, order_mode
    )
-   VALUES ($1, $2, $3, $4, $5, $6, 'razorpay')
+   VALUES ($1, $2, $3, $4, $5, $6, 'razorpay', 'custom')
    RETURNING *`,
         [
           userIdParsed,
@@ -251,7 +252,7 @@ const createOrder = async (userId, orderData) => {
 const getOrdersForUser = async (userId) => {
   const result = await pool.query(
     `SELECT
-       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted,
+       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted, order_mode,
        razorpay_order_id, razorpay_payment_id, paid_at, created_at
      FROM orders
      WHERE user_id = $1
@@ -264,7 +265,7 @@ const getOrdersForUser = async (userId) => {
 const getOrderByIdForUser = async (orderId, userId) => {
   const result = await pool.query(
     `SELECT
-       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted,
+       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted, order_mode,
        razorpay_order_id, razorpay_payment_id, paid_at, created_at
      FROM orders
      WHERE order_id = $1 AND user_id = $2`,
@@ -289,7 +290,7 @@ const getOrderByIdForUser = async (orderId, userId) => {
 const getOrderPaymentStatusForUser = async (orderId, userId) => {
   const result = await pool.query(
     `SELECT
-       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted,
+       order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted, order_mode,
        razorpay_order_id, razorpay_payment_id, paid_at, created_at
      FROM orders
      WHERE order_id = $1 AND user_id = $2`,
@@ -352,12 +353,16 @@ const cancelOrderForUser = async (orderId, userId) => {
        SET status = 'cancelled'
        WHERE order_id = $1
        RETURNING
-         order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted,
+         order_id, user_id, status, total_amount_paise, credits_to_grant, credits_granted, order_mode,
          razorpay_order_id, razorpay_payment_id, paid_at, created_at`,
       [orderId],
     );
 
     await client.query("COMMIT");
+
+    if (String(order.order_mode || "product") === "service") {
+      await markServiceRequestPaymentCancelledByOrderId(orderId);
+    }
 
     return { message: "Order cancelled", order: updated.rows[0] };
   } catch (err) {

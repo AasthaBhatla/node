@@ -1,6 +1,7 @@
 // services/razorpayWebhookService.js
 const crypto = require("crypto");
 const pool = require("../db");
+const { markServiceRequestPaidByOrderId } = require("./serviceRequestService");
 
 function verifyWebhookSignature(rawBody, signature, secret) {
   const expected = crypto
@@ -122,6 +123,16 @@ exports.handleRazorpayWebhook = async ({ rawBody, signature }) => {
     );
 
     let updatedOrder = updatedRes.rows[0];
+
+    // Service orders are paid flows but they must never grant wallet credits.
+    if (String(updatedOrder.order_mode || "product") === "service") {
+      await client.query("COMMIT");
+      await markServiceRequestPaidByOrderId(
+        updatedOrder.order_id,
+        updatedOrder.paid_at || new Date().toISOString(),
+      );
+      return;
+    }
 
     // Grant credits once
     const credits = parseInt(updatedOrder.credits_to_grant || 0, 10);

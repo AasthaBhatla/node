@@ -28,6 +28,7 @@ ALTER TABLE orders
 ADD COLUMN IF NOT EXISTS total_amount_paise INT NOT NULL DEFAULT 0,
 ADD COLUMN IF NOT EXISTS credits_to_grant INT NOT NULL DEFAULT 0,
 ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(20) NOT NULL DEFAULT 'razorpay',
+ADD COLUMN IF NOT EXISTS order_mode VARCHAR(20) NOT NULL DEFAULT 'product',
 ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(100),
 ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(100),
 ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(200),
@@ -35,6 +36,19 @@ ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP,
 ADD COLUMN IF NOT EXISTS credits_granted BOOLEAN NOT NULL DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS direct_amount_paise INT,
 ADD COLUMN IF NOT EXISTS order_note TEXT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'orders_order_mode_check'
+  ) THEN
+    ALTER TABLE orders
+      ADD CONSTRAINT orders_order_mode_check
+      CHECK (order_mode IN ('product', 'custom', 'service'));
+  END IF;
+END $$;
 
 -- A Razorpay order id should be unique in your system
 CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_razorpay_order_id
