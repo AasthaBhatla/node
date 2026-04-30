@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS services (
   refund_cancellation_policy_text TEXT,
   location_coverage_note TEXT,
   consultations_completed_count INT NOT NULL DEFAULT 0,
+  current_viewers_count INT NOT NULL DEFAULT 0,
   years_of_experience INT NOT NULL DEFAULT 0,
   enabled_trust_badges JSONB NOT NULL DEFAULT '[]'::jsonb,
   published_at TIMESTAMP NULL,
@@ -86,9 +87,28 @@ CREATE TABLE IF NOT EXISTS services (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT services_consultations_completed_count_check
     CHECK (consultations_completed_count >= 0),
+  CONSTRAINT services_current_viewers_count_check
+    CHECK (current_viewers_count >= 0),
   CONSTRAINT services_years_of_experience_check
     CHECK (years_of_experience >= 0)
 );
+
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS current_viewers_count INT NOT NULL DEFAULT 0;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'services_current_viewers_count_check'
+  ) THEN
+    ALTER TABLE services
+      ADD CONSTRAINT services_current_viewers_count_check
+      CHECK (current_viewers_count >= 0);
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_services_status
   ON services (status, published_at DESC);
@@ -105,6 +125,111 @@ CREATE TABLE IF NOT EXISTS service_term_relationships (
 
 CREATE INDEX IF NOT EXISTS idx_service_term_relationships_term
   ON service_term_relationships (term_id, service_id);
+
+DO $service_taxonomy_mapping$
+DECLARE
+  v_services_taxonomy_id INT;
+BEGIN
+  INSERT INTO taxonomy (slug, title)
+  VALUES ('services', 'Services')
+  ON CONFLICT (slug) DO UPDATE
+  SET title = EXCLUDED.title;
+
+  SELECT id
+  INTO v_services_taxonomy_id
+  FROM taxonomy
+  WHERE slug = 'services'
+  LIMIT 1;
+
+  CREATE TEMP TABLE service_terms_to_normalize ON COMMIT DROP AS
+  SELECT DISTINCT
+    term.id AS old_term_id,
+    term.slug,
+    term.title
+  FROM terms term
+  WHERE term.taxonomy_id <> v_services_taxonomy_id
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM services service
+        WHERE service.primary_service_term_id = term.id
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM service_term_relationships rel
+        WHERE rel.term_id = term.id
+      )
+    );
+
+  UPDATE terms existing
+  SET title = source.title,
+      updated_at = CURRENT_TIMESTAMP
+  FROM service_terms_to_normalize source
+  WHERE existing.taxonomy_id = v_services_taxonomy_id
+    AND existing.slug = source.slug;
+
+  INSERT INTO terms (taxonomy_id, slug, title)
+  SELECT
+    v_services_taxonomy_id,
+    source.slug,
+    source.title
+  FROM service_terms_to_normalize source
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM terms existing
+    WHERE existing.taxonomy_id = v_services_taxonomy_id
+      AND existing.slug = source.slug
+  );
+
+  CREATE TEMP TABLE service_term_normalized_ids ON COMMIT DROP AS
+  SELECT
+    source.old_term_id,
+    normalized.id AS new_term_id
+  FROM service_terms_to_normalize source
+  JOIN terms normalized
+    ON normalized.taxonomy_id = v_services_taxonomy_id
+   AND normalized.slug = source.slug;
+
+  INSERT INTO term_metadata (term_id, key, value)
+  SELECT
+    mapped.new_term_id,
+    metadata.key,
+    metadata.value
+  FROM term_metadata metadata
+  JOIN service_term_normalized_ids mapped
+    ON mapped.old_term_id = metadata.term_id
+  ON CONFLICT (term_id, key) DO UPDATE
+  SET value = EXCLUDED.value;
+
+  UPDATE services service
+  SET primary_service_term_id = mapped.new_term_id,
+      updated_at = CURRENT_TIMESTAMP
+  FROM service_term_normalized_ids mapped
+  WHERE service.primary_service_term_id = mapped.old_term_id;
+
+  INSERT INTO service_term_relationships (service_id, term_id, created_at)
+  SELECT DISTINCT
+    rel.service_id,
+    mapped.new_term_id,
+    rel.created_at
+  FROM service_term_relationships rel
+  JOIN service_term_normalized_ids mapped
+    ON mapped.old_term_id = rel.term_id
+  ON CONFLICT (service_id, term_id) DO NOTHING;
+
+  DELETE FROM service_term_relationships rel
+  USING service_term_normalized_ids mapped
+  WHERE rel.term_id = mapped.old_term_id;
+
+  INSERT INTO service_term_relationships (service_id, term_id)
+  SELECT
+    service.id,
+    service.primary_service_term_id
+  FROM services service
+  WHERE service.primary_service_term_id IS NOT NULL
+  ON CONFLICT (service_id, term_id) DO NOTHING;
+END
+$service_taxonomy_mapping$;
 
 CREATE TABLE IF NOT EXISTS service_location_relationships (
   service_id BIGINT NOT NULL REFERENCES services(id) ON DELETE CASCADE,

@@ -192,6 +192,10 @@ function normalizeCheckoutPayload(service, payload) {
 
   const answersInput = Array.isArray(payload?.answers) ? payload.answers : [];
   const filesInput = Array.isArray(payload?.files) ? payload.files : [];
+  const allowDeferredIntake =
+    payload?.intake_required === false ||
+    payload?.lead_capture === true ||
+    normalizeString(payload?.checkout_mode) === "direct_payment";
   const answersByKey = new Map();
   const filesByKey = new Map();
 
@@ -227,6 +231,9 @@ function normalizeCheckoutPayload(service, payload) {
     if (field.field_type === "file") {
       const files = filesByKey.get(field.field_key) || [];
       if (files.length === 0) {
+        if (allowDeferredIntake) {
+          continue;
+        }
         throw createValidationError(`${field.label} is required`);
       }
       normalizedFiles.push(...files);
@@ -235,6 +242,9 @@ function normalizeCheckoutPayload(service, payload) {
 
     const answer = answersByKey.get(field.field_key);
     if (!answer) {
+      if (allowDeferredIntake) {
+        continue;
+      }
       throw createValidationError(`${field.label} is required`);
     }
 

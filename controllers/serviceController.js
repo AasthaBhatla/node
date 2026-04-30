@@ -4,6 +4,7 @@ const {
   getPublicServiceBySlug,
   getServiceById,
   getServiceReportSummary,
+  listPublicServiceFilters,
   listPublicServices,
   reportServices,
   updateService,
@@ -103,6 +104,15 @@ exports.publicList = async (req, res) => {
     return res.status(200).json(list);
   } catch (error) {
     return handleError(res, error, "Public Service List Error:");
+  }
+};
+
+exports.publicFilters = async (_req, res) => {
+  try {
+    const filters = await listPublicServiceFilters();
+    return res.status(200).json(filters);
+  } catch (error) {
+    return handleError(res, error, "Public Service Filters Error:");
   }
 };
 

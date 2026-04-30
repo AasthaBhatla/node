@@ -7,6 +7,7 @@ const serviceController = require("../controllers/serviceController");
 const router = express.Router();
 
 router.get("/public", serviceController.publicList);
+router.get("/public/filters", serviceController.publicFilters);
 router.get("/public/:slug", serviceController.publicBySlug);
 
 router.use(authMiddleware, requireAdmin());

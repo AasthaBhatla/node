@@ -123,6 +123,27 @@ function normalizeIntegerArray(values) {
   )];
 }
 
+function normalizePublicCatalogItems(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      id: Number(item.id),
+      taxonomy_id: item.taxonomy_id === null || item.taxonomy_id === undefined
+        ? null
+        : Number(item.taxonomy_id),
+      taxonomy_slug: item.taxonomy_slug || null,
+      slug: item.slug,
+      title: item.title,
+      count: item.count === undefined ? undefined : Number(item.count || 0),
+      is_primary: item.is_primary === undefined ? undefined : Boolean(item.is_primary),
+    }))
+    .filter((item) => Number.isFinite(item.id) && item.title);
+}
+
 function normalizeLimit(limit) {
   const parsed = Number.parseInt(limit, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -490,6 +511,11 @@ function normalizeServicePayload(payload) {
     consultations_completed_count: normalizePositiveInteger(
       payload?.consultations_completed_count,
       "consultations_completed_count",
+      { allowZero: true, fallback: 0 },
+    ),
+    current_viewers_count: normalizePositiveInteger(
+      payload?.current_viewers_count,
+      "current_viewers_count",
       { allowZero: true, fallback: 0 },
     ),
     years_of_experience: normalizePositiveInteger(
@@ -1057,6 +1083,7 @@ async function serializeService(row, { publicOnly = false } = {}) {
     refund_cancellation_policy_text: row.refund_cancellation_policy_text,
     location_coverage_note: row.location_coverage_note,
     consultations_completed_count: Number(row.consultations_completed_count || 0),
+    current_viewers_count: Number(row.current_viewers_count || 0),
     years_of_experience: Number(row.years_of_experience || 0),
     enabled_trust_badges: Array.isArray(row.enabled_trust_badges) ? row.enabled_trust_badges : [],
     trust_badges: (Array.isArray(row.enabled_trust_badges) ? row.enabled_trust_badges : []).map((key) => ({
@@ -1169,6 +1196,7 @@ function serviceToMutablePayload(service) {
     location_coverage_note: service.location_coverage_note,
     language_ids: service.languages.map((item) => item.id),
     consultations_completed_count: service.consultations_completed_count,
+    current_viewers_count: service.current_viewers_count,
     years_of_experience: service.years_of_experience,
     enabled_trust_badges: service.enabled_trust_badges,
     variants: service.variants.map((variant) => ({
@@ -1254,9 +1282,10 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
            refund_cancellation_policy_text = $26,
            location_coverage_note = $27,
            consultations_completed_count = $28,
-           years_of_experience = $29,
-           enabled_trust_badges = $30::jsonb,
-           published_at = $31,
+           current_viewers_count = $29,
+           years_of_experience = $30,
+           enabled_trust_badges = $31::jsonb,
+           published_at = $32,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -1288,6 +1317,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.refund_cancellation_policy_text,
         payload.location_coverage_note,
         payload.consultations_completed_count,
+        payload.current_viewers_count,
         payload.years_of_experience,
         JSON.stringify(payload.enabled_trust_badges),
         payload.published_at,
@@ -1323,6 +1353,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
          refund_cancellation_policy_text,
          location_coverage_note,
          consultations_completed_count,
+         current_viewers_count,
          years_of_experience,
          enabled_trust_badges,
          published_at,
@@ -1332,7 +1363,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
          $11, $12, $13, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb,
          $19::jsonb, $20::jsonb, $21::jsonb, $22, $23, $24, $25, $26, $27, $28,
-         $29::jsonb, $30, $31
+         $29, $30::jsonb, $31, $32
        )
        RETURNING id`,
       [
@@ -1363,6 +1394,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.refund_cancellation_policy_text,
         payload.location_coverage_note,
         payload.consultations_completed_count,
+        payload.current_viewers_count,
         payload.years_of_experience,
         JSON.stringify(payload.enabled_trust_badges),
         payload.published_at,
@@ -1779,6 +1811,8 @@ async function listPublicServices(filters = {}) {
   const offset = normalizeOffset(filters.offset);
   const search = normalizeString(filters.search);
   const termId = normalizePositiveInteger(filters.term_id, "term_id", { fallback: null });
+  const locationId = normalizePositiveInteger(filters.location_id, "location_id", { fallback: null });
+  const languageId = normalizePositiveInteger(filters.language_id, "language_id", { fallback: null });
 
   const values = ["published"];
   const conditions = [`s.status = $1`];
@@ -1786,11 +1820,36 @@ async function listPublicServices(filters = {}) {
   if (termId) {
     values.push(termId);
     conditions.push(
+      `(s.primary_service_term_id = $${values.length}
+        OR EXISTS (
+          SELECT 1
+          FROM service_term_relationships rel
+          WHERE rel.service_id = s.id
+            AND rel.term_id = $${values.length}
+        ))`,
+    );
+  }
+
+  if (locationId) {
+    values.push(locationId);
+    conditions.push(
       `EXISTS (
          SELECT 1
-         FROM service_term_relationships rel
+         FROM service_location_relationships rel
          WHERE rel.service_id = s.id
-           AND rel.term_id = $${values.length}
+           AND rel.location_id = $${values.length}
+       )`,
+    );
+  }
+
+  if (languageId) {
+    values.push(languageId);
+    conditions.push(
+      `EXISTS (
+         SELECT 1
+         FROM service_language_relationships rel
+         WHERE rel.service_id = s.id
+           AND rel.language_id = $${values.length}
        )`,
     );
   }
@@ -1801,7 +1860,20 @@ async function listPublicServices(filters = {}) {
       `(s.title ILIKE $${values.length}
         OR s.slug ILIKE $${values.length}
         OR COALESCE(s.short_description, '') ILIKE $${values.length}
-        OR COALESCE(s.meta_description, '') ILIKE $${values.length})`,
+        OR COALESCE(s.meta_description, '') ILIKE $${values.length}
+        OR EXISTS (
+          SELECT 1
+          FROM terms term
+          WHERE term.id = s.primary_service_term_id
+            AND (term.title ILIKE $${values.length} OR term.slug ILIKE $${values.length})
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM service_term_relationships rel
+          JOIN terms term ON term.id = rel.term_id
+          WHERE rel.service_id = s.id
+            AND (term.title ILIKE $${values.length} OR term.slug ILIKE $${values.length})
+        ))`,
     );
   }
 
@@ -1819,8 +1891,75 @@ async function listPublicServices(filters = {}) {
        s.featured_image_alt,
        s.published_at,
        s.primary_service_term_id,
+       primary_taxonomy.slug AS primary_service_taxonomy_slug,
+       primary_term.taxonomy_id AS primary_service_taxonomy_id,
        primary_term.slug AS primary_service_term_slug,
        primary_term.title AS primary_service_term_title,
+       COALESCE(
+         (
+           SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'id', mapped_term.id,
+                      'taxonomy_id', mapped_term.taxonomy_id,
+                      'taxonomy_slug', mapped_term.taxonomy_slug,
+                      'slug', mapped_term.slug,
+                      'title', mapped_term.title
+                    )
+                    ORDER BY mapped_term.title ASC, mapped_term.id ASC
+                  )
+           FROM (
+             SELECT DISTINCT
+               term.id,
+               term.taxonomy_id,
+               taxonomy.slug AS taxonomy_slug,
+               term.slug,
+               term.title
+             FROM (
+               SELECT rel.term_id
+               FROM service_term_relationships rel
+               WHERE rel.service_id = s.id
+               UNION
+               SELECT s.primary_service_term_id
+               WHERE s.primary_service_term_id IS NOT NULL
+             ) service_terms
+             JOIN terms term ON term.id = service_terms.term_id
+             LEFT JOIN taxonomy ON taxonomy.id = term.taxonomy_id
+           ) mapped_term
+         ),
+         '[]'::jsonb
+       ) AS terms,
+       COALESCE(
+         (
+           SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'id', location.id,
+                      'slug', location.slug,
+                      'title', location.title
+                    )
+                    ORDER BY location.title ASC, location.id ASC
+                  )
+           FROM service_location_relationships rel
+           JOIN locations location ON location.id = rel.location_id
+           WHERE rel.service_id = s.id
+         ),
+         '[]'::jsonb
+       ) AS locations,
+       COALESCE(
+         (
+           SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'id', language.id,
+                      'slug', language.slug,
+                      'title', language.title
+                    )
+                    ORDER BY language.title ASC, language.id ASC
+                  )
+           FROM service_language_relationships rel
+           JOIN languages language ON language.id = rel.language_id
+           WHERE rel.service_id = s.id
+         ),
+         '[]'::jsonb
+       ) AS languages,
        COALESCE(
          (
            SELECT MIN(variant.price_paise)
@@ -1833,6 +1972,7 @@ async function listPublicServices(filters = {}) {
        COUNT(*) OVER()::int AS total_count
      FROM services s
      LEFT JOIN terms primary_term ON primary_term.id = s.primary_service_term_id
+     LEFT JOIN taxonomy primary_taxonomy ON primary_taxonomy.id = primary_term.taxonomy_id
      WHERE ${conditions.join(" AND ")}
      ORDER BY COALESCE(s.published_at, s.updated_at) DESC, s.id DESC
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
@@ -1862,10 +2002,106 @@ async function listPublicServices(filters = {}) {
           ? null
           : {
               id: Number(row.primary_service_term_id),
+              taxonomy_id: row.primary_service_taxonomy_id === null ? null : Number(row.primary_service_taxonomy_id),
+              taxonomy_slug: row.primary_service_taxonomy_slug,
               slug: row.primary_service_term_slug,
               title: row.primary_service_term_title,
             },
+      terms: normalizePublicCatalogItems(row.terms),
+      locations: normalizePublicCatalogItems(row.locations),
+      languages: normalizePublicCatalogItems(row.languages),
     })),
+  };
+}
+
+async function listPublicServiceFilters() {
+  const [primaryTermsResult, termsResult, locationsResult, languagesResult] = await Promise.all([
+    pool.query(
+      `SELECT
+         term.id,
+         term.taxonomy_id,
+         taxonomy.slug AS taxonomy_slug,
+         term.slug,
+         term.title,
+         COUNT(DISTINCT s.id)::int AS count
+       FROM services s
+       JOIN terms term ON term.id = s.primary_service_term_id
+       LEFT JOIN taxonomy ON taxonomy.id = term.taxonomy_id
+       WHERE s.status = 'published'
+       GROUP BY term.id, taxonomy.slug
+       ORDER BY count DESC, term.title ASC, term.id ASC`,
+    ),
+    pool.query(
+      `WITH mapped_terms AS (
+         SELECT
+           s.id AS service_id,
+           s.primary_service_term_id AS term_id,
+           TRUE AS is_primary
+         FROM services s
+         WHERE s.status = 'published'
+           AND s.primary_service_term_id IS NOT NULL
+
+         UNION
+
+         SELECT
+           rel.service_id,
+           rel.term_id,
+           FALSE AS is_primary
+         FROM service_term_relationships rel
+         JOIN services s ON s.id = rel.service_id
+         WHERE s.status = 'published'
+       )
+       SELECT
+         term.id,
+         term.taxonomy_id,
+         taxonomy.slug AS taxonomy_slug,
+         term.slug,
+         term.title,
+         COUNT(DISTINCT mapped_terms.service_id)::int AS count,
+         BOOL_OR(mapped_terms.is_primary)::boolean AS is_primary
+       FROM mapped_terms
+       JOIN terms term ON term.id = mapped_terms.term_id
+       LEFT JOIN taxonomy ON taxonomy.id = term.taxonomy_id
+       GROUP BY term.id, taxonomy.slug
+       ORDER BY
+         BOOL_OR(mapped_terms.is_primary) DESC,
+         count DESC,
+         term.title ASC,
+         term.id ASC`,
+    ),
+    pool.query(
+      `SELECT
+         location.id,
+         location.slug,
+         location.title,
+         COUNT(DISTINCT rel.service_id)::int AS count
+       FROM service_location_relationships rel
+       JOIN services s ON s.id = rel.service_id
+       JOIN locations location ON location.id = rel.location_id
+       WHERE s.status = 'published'
+       GROUP BY location.id
+       ORDER BY count DESC, location.title ASC, location.id ASC`,
+    ),
+    pool.query(
+      `SELECT
+         language.id,
+         language.slug,
+         language.title,
+         COUNT(DISTINCT rel.service_id)::int AS count
+       FROM service_language_relationships rel
+       JOIN services s ON s.id = rel.service_id
+       JOIN languages language ON language.id = rel.language_id
+       WHERE s.status = 'published'
+       GROUP BY language.id
+       ORDER BY count DESC, language.title ASC, language.id ASC`,
+    ),
+  ]);
+
+  return {
+    primary_terms: normalizePublicCatalogItems(primaryTermsResult.rows),
+    terms: normalizePublicCatalogItems(termsResult.rows),
+    locations: normalizePublicCatalogItems(locationsResult.rows),
+    languages: normalizePublicCatalogItems(languagesResult.rows),
   };
 }
 
@@ -1879,6 +2115,7 @@ module.exports = {
   getPublicServiceBySlug,
   getServiceById,
   getServiceReportSummary,
+  listPublicServiceFilters,
   listPublicServices,
   reportServices,
   updateService,

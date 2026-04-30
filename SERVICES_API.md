@@ -9,7 +9,8 @@
 - `POST /services/report/summary`
 
 ## Public services
-- `GET /services/public?term_id=123&search=notice&limit=20&offset=0`
+- `GET /services/public?term_id=123&location_id=1&language_id=44&search=notice&limit=20&offset=0`
+- `GET /services/public/filters`
 - `GET /services/public/:slug`
 
 ## Admin service requests
