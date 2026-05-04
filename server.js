@@ -65,6 +65,7 @@ const adminFinanceRoutes = require("./routes/adminFinanceRoutes");
 const adminConfigRoutes = require("./routes/adminConfigRoutes");
 const serviceRoutes = require("./routes/serviceRoutes");
 const serviceRequestRoutes = require("./routes/serviceRequestRoutes");
+const blogRoutes = require("./routes/blogRoutes");
 
 app.use("/sessions", sessionRoutes);
 app.use("/auth", authRoutes);
@@ -101,6 +102,7 @@ app.use("/expert-connect", expertConnectRoutes);
 app.use("/internal/notifications", internalNotifications);
 app.use("/services", serviceRoutes);
 app.use("/service-requests", serviceRequestRoutes);
+app.use("/blogs", blogRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working!" });

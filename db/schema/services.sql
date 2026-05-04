@@ -4,6 +4,10 @@ BEGIN
     CREATE TYPE service_status AS ENUM ('draft', 'published', 'archived');
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'service_type') THEN
+    CREATE TYPE service_type AS ENUM ('consultation', 'managed_service');
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'service_cta_key') THEN
     CREATE TYPE service_cta_key AS ENUM (
       'book_consultation',
@@ -52,6 +56,7 @@ END $$;
 CREATE TABLE IF NOT EXISTS services (
   id BIGSERIAL PRIMARY KEY,
   status service_status NOT NULL DEFAULT 'draft',
+  service_type service_type NOT NULL DEFAULT 'consultation',
   title TEXT NOT NULL,
   slug VARCHAR(255) NOT NULL UNIQUE,
   short_description TEXT,
@@ -95,6 +100,12 @@ CREATE TABLE IF NOT EXISTS services (
 
 ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS current_viewers_count INT NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS service_type service_type NOT NULL DEFAULT 'consultation';
+
+CREATE INDEX IF NOT EXISTS idx_services_service_type
+  ON services (service_type);
 
 DO $$
 BEGIN

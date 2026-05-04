@@ -3,6 +3,9 @@ const {
   SERVICE_CTA_KEYS,
   SERVICE_CTA_LABELS,
   SERVICE_FORM_FIELD_TYPES,
+  SERVICE_TYPE_LABELS,
+  SERVICE_TYPE_OPTIONS,
+  SERVICE_TYPE_VALUES,
   SERVICE_TRUST_BADGE_KEYS,
   SERVICE_TRUST_BADGE_LABELS,
 } = require("./serviceCatalogConstants");
@@ -168,6 +171,19 @@ function normalizeStatus(value, fallback = "draft") {
     throw createValidationError(`Invalid status: ${status}`);
   }
   return status;
+}
+
+function normalizeServiceType(value, fallback = null) {
+  const serviceType = normalizeString(value).toLowerCase() || fallback;
+  if (!serviceType) {
+    throw createValidationError("service_type is required");
+  }
+
+  if (!SERVICE_TYPE_VALUES.includes(serviceType)) {
+    throw createValidationError(`Invalid service_type: ${serviceType}`);
+  }
+
+  return serviceType;
 }
 
 function normalizeStringList(values, fieldName) {
@@ -470,6 +486,7 @@ function normalizeServicePayload(payload) {
   }
 
   const status = normalizeStatus(payload?.status, "draft");
+  const serviceType = normalizeServiceType(payload?.service_type);
   const publishedAt = status === "published"
     ? normalizeTimestamp(payload?.published_at) || new Date().toISOString()
     : normalizeTimestamp(payload?.published_at);
@@ -480,6 +497,7 @@ function normalizeServicePayload(payload) {
 
   return {
     status,
+    service_type: serviceType,
     title,
     slug,
     short_description: normalizeNullableString(payload?.short_description),
@@ -1042,6 +1060,8 @@ async function serializeService(row, { publicOnly = false } = {}) {
   const service = {
     id: Number(row.id),
     status: row.status,
+    service_type: row.service_type,
+    service_type_label: SERVICE_TYPE_LABELS[row.service_type] || row.service_type,
     title: row.title,
     slug: row.slug,
     short_description: row.short_description,
@@ -1165,6 +1185,7 @@ async function getServiceRowBySlug(slug, { publicOnly = false } = {}) {
 function serviceToMutablePayload(service) {
   return {
     status: service.status,
+    service_type: service.service_type,
     title: service.title,
     slug: service.slug,
     short_description: service.short_description,
@@ -1256,41 +1277,43 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
     await client.query(
       `UPDATE services
        SET status = $2,
-           title = $3,
-           slug = $4,
-           short_description = $5,
-           featured_image_url = $6,
-           featured_image_alt = $7,
-           meta_title = $8,
-           meta_description = $9,
-           canonical_url_override = $10,
-           og_title = $11,
-           og_description = $12,
-           is_indexable = $13,
-           primary_service_term_id = $14,
-           who_this_is_for = $15::jsonb,
-           problems_covered = $16::jsonb,
-           included_items = $17::jsonb,
-           excluded_items = $18::jsonb,
-           required_information = $19::jsonb,
-           deliverables = $20::jsonb,
-           documents_required = $21::jsonb,
-           process_steps = $22::jsonb,
-           duration_text = $23,
-           turnaround_time_text = $24,
-           disclaimer_text = $25,
-           refund_cancellation_policy_text = $26,
-           location_coverage_note = $27,
-           consultations_completed_count = $28,
-           current_viewers_count = $29,
-           years_of_experience = $30,
-           enabled_trust_badges = $31::jsonb,
-           published_at = $32,
+           service_type = $3,
+           title = $4,
+           slug = $5,
+           short_description = $6,
+           featured_image_url = $7,
+           featured_image_alt = $8,
+           meta_title = $9,
+           meta_description = $10,
+           canonical_url_override = $11,
+           og_title = $12,
+           og_description = $13,
+           is_indexable = $14,
+           primary_service_term_id = $15,
+           who_this_is_for = $16::jsonb,
+           problems_covered = $17::jsonb,
+           included_items = $18::jsonb,
+           excluded_items = $19::jsonb,
+           required_information = $20::jsonb,
+           deliverables = $21::jsonb,
+           documents_required = $22::jsonb,
+           process_steps = $23::jsonb,
+           duration_text = $24,
+           turnaround_time_text = $25,
+           disclaimer_text = $26,
+           refund_cancellation_policy_text = $27,
+           location_coverage_note = $28,
+           consultations_completed_count = $29,
+           current_viewers_count = $30,
+           years_of_experience = $31,
+           enabled_trust_badges = $32::jsonb,
+           published_at = $33,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
         serviceId,
         payload.status,
+        payload.service_type,
         payload.title,
         payload.slug,
         payload.short_description,
@@ -1327,6 +1350,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
     const created = await client.query(
       `INSERT INTO services (
          status,
+         service_type,
          title,
          slug,
          short_description,
@@ -1361,13 +1385,14 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         $11, $12, $13, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb,
-         $19::jsonb, $20::jsonb, $21::jsonb, $22, $23, $24, $25, $26, $27, $28,
-         $29, $30::jsonb, $31, $32
+         $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb,
+         $20::jsonb, $21::jsonb, $22::jsonb, $23, $24, $25, $26, $27, $28, $29,
+         $30, $31::jsonb, $32, $33
        )
        RETURNING id`,
       [
         payload.status,
+        payload.service_type,
         payload.title,
         payload.slug,
         payload.short_description,
@@ -1555,6 +1580,14 @@ function buildReportFilters(filters = {}) {
     conditions.push(`s.status = ANY($${values.length}::text[])`);
   }
 
+  const serviceTypes = Array.isArray(filters.service_types)
+    ? filters.service_types.map((serviceType) => normalizeServiceType(serviceType))
+    : [];
+  if (serviceTypes.length > 0) {
+    values.push(serviceTypes);
+    conditions.push(`s.service_type = ANY($${values.length}::service_type[])`);
+  }
+
   const primaryServiceTermIds = normalizeIntegerArray(filters.primary_service_term_ids);
   if (primaryServiceTermIds.length > 0) {
     values.push(primaryServiceTermIds);
@@ -1657,6 +1690,7 @@ function normalizeSort(sortBy, sortOrder) {
     title: "s.title",
     slug: "s.slug",
     status: "s.status",
+    service_type: "s.service_type",
     starting_price_paise: "starting_price_paise",
   };
 
@@ -1677,6 +1711,7 @@ async function reportServices(filters = {}) {
     `SELECT
        s.id,
        s.status,
+       s.service_type,
        s.title,
        s.slug,
        s.short_description,
@@ -1745,6 +1780,8 @@ async function reportServices(filters = {}) {
     items: rows.map((row) => ({
       id: Number(row.id),
       status: row.status,
+      service_type: row.service_type,
+      service_type_label: SERVICE_TYPE_LABELS[row.service_type] || row.service_type,
       title: row.title,
       slug: row.slug,
       short_description: row.short_description,
@@ -1813,9 +1850,17 @@ async function listPublicServices(filters = {}) {
   const termId = normalizePositiveInteger(filters.term_id, "term_id", { fallback: null });
   const locationId = normalizePositiveInteger(filters.location_id, "location_id", { fallback: null });
   const languageId = normalizePositiveInteger(filters.language_id, "language_id", { fallback: null });
+  const publicServiceType = normalizeString(filters.service_type)
+    ? normalizeServiceType(filters.service_type)
+    : null;
 
   const values = ["published"];
   const conditions = [`s.status = $1`];
+
+  if (publicServiceType) {
+    values.push(publicServiceType);
+    conditions.push(`s.service_type = $${values.length}`);
+  }
 
   if (termId) {
     values.push(termId);
@@ -1882,6 +1927,7 @@ async function listPublicServices(filters = {}) {
   const result = await pool.query(
     `SELECT
        s.id,
+       s.service_type,
        s.title,
        s.slug,
        s.short_description,
@@ -1988,6 +2034,8 @@ async function listPublicServices(filters = {}) {
     offset,
     items: rows.map((row) => ({
       id: Number(row.id),
+      service_type: row.service_type,
+      service_type_label: SERVICE_TYPE_LABELS[row.service_type] || row.service_type,
       title: row.title,
       slug: row.slug,
       short_description: row.short_description || row.meta_description || "",
@@ -2015,7 +2063,16 @@ async function listPublicServices(filters = {}) {
 }
 
 async function listPublicServiceFilters() {
-  const [primaryTermsResult, termsResult, locationsResult, languagesResult] = await Promise.all([
+  const [serviceTypesResult, primaryTermsResult, termsResult, locationsResult, languagesResult] = await Promise.all([
+    pool.query(
+      `SELECT
+         s.service_type,
+         COUNT(DISTINCT s.id)::int AS count
+       FROM services s
+       WHERE s.status = 'published'
+       GROUP BY s.service_type
+       ORDER BY s.service_type ASC`,
+    ),
     pool.query(
       `SELECT
          term.id,
@@ -2098,6 +2155,14 @@ async function listPublicServiceFilters() {
   ]);
 
   return {
+    service_types: SERVICE_TYPE_OPTIONS.map((option) => {
+      const matched = serviceTypesResult.rows.find((row) => row.service_type === option.value);
+      return {
+        value: option.value,
+        label: option.label,
+        count: Number(matched?.count || 0),
+      };
+    }),
     primary_terms: normalizePublicCatalogItems(primaryTermsResult.rows),
     terms: normalizePublicCatalogItems(termsResult.rows),
     locations: normalizePublicCatalogItems(locationsResult.rows),
@@ -2109,6 +2174,9 @@ module.exports = {
   SERVICE_CTA_KEYS,
   SERVICE_CTA_LABELS,
   SERVICE_FORM_FIELD_TYPES,
+  SERVICE_TYPE_LABELS,
+  SERVICE_TYPE_OPTIONS,
+  SERVICE_TYPE_VALUES,
   SERVICE_TRUST_BADGE_KEYS,
   createService,
   deleteService,

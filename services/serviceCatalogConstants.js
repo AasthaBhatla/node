@@ -6,6 +6,18 @@ const SERVICE_CTA_KEYS = [
   "request_callback",
 ];
 
+const SERVICE_TYPE_OPTIONS = [
+  { value: "consultation", label: "Consultation" },
+  { value: "managed_service", label: "Managed Service" },
+];
+
+const SERVICE_TYPE_VALUES = SERVICE_TYPE_OPTIONS.map((option) => option.value);
+
+const SERVICE_TYPE_LABELS = SERVICE_TYPE_OPTIONS.reduce((labels, option) => {
+  labels[option.value] = option.label;
+  return labels;
+}, {});
+
 const SERVICE_CTA_LABELS = {
   book_consultation: "Book Consultation",
   talk_to_legal_expert: "Talk to a Legal Expert",
@@ -49,6 +61,9 @@ module.exports = {
   SERVICE_CTA_KEYS,
   SERVICE_CTA_LABELS,
   SERVICE_FORM_FIELD_TYPES,
+  SERVICE_TYPE_LABELS,
+  SERVICE_TYPE_OPTIONS,
+  SERVICE_TYPE_VALUES,
   SERVICE_TRUST_BADGE_KEYS,
   SERVICE_TRUST_BADGE_LABELS,
 };
