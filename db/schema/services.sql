@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS services (
   is_indexable BOOLEAN NOT NULL DEFAULT TRUE,
   primary_service_term_id INT REFERENCES terms(id) ON DELETE RESTRICT,
   who_this_is_for JSONB NOT NULL DEFAULT '[]'::jsonb,
+  benefit_cards JSONB NOT NULL DEFAULT '[]'::jsonb,
   problems_covered JSONB NOT NULL DEFAULT '[]'::jsonb,
   included_items JSONB NOT NULL DEFAULT '[]'::jsonb,
   excluded_items JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -111,6 +112,9 @@ ALTER TABLE IF EXISTS services
 
 ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS custom_content_html TEXT;
+
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS benefit_cards JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_services_service_type
   ON services (service_type);

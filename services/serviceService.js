@@ -11,6 +11,13 @@ const {
 } = require("./serviceCatalogConstants");
 
 const ALLOWED_STATUSES = new Set(["draft", "published", "archived"]);
+const SERVICE_BENEFIT_CARD_TONES = ["violet", "blue", "green", "orange"];
+const SERVICE_BENEFIT_CARD_ICONS = [
+  "fa-solid fa-user-check",
+  "fa-solid fa-shield-halved",
+  "fa-solid fa-file-signature",
+  "fa-solid fa-handshake-angle",
+];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
@@ -228,6 +235,59 @@ function normalizeStringList(values, fieldName) {
   if (fieldName && result.some((item) => item.length > 1000)) {
     throw createValidationError(`${fieldName} entries must be shorter than 1000 characters`);
   }
+
+  return result;
+}
+
+function normalizeIconClass(value, fallback) {
+  const normalized = normalizeString(value)
+    .replace(/[^a-z0-9\-\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized || fallback;
+}
+
+function normalizeBenefitCards(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const result = [];
+  const seen = new Set();
+
+  values.forEach((value, index) => {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    const title = normalizeString(value.title);
+    const description = normalizeString(value.description ?? value.copy);
+    if (!title && !description) {
+      return;
+    }
+
+    if (!title || !description) {
+      throw createValidationError("Each benefit card requires a title and description");
+    }
+
+    const fingerprint = `${title}\n${description}`.toLowerCase();
+    if (seen.has(fingerprint)) {
+      return;
+    }
+    seen.add(fingerprint);
+
+    const tone = SERVICE_BENEFIT_CARD_TONES.includes(sanitizeKey(value.tone))
+      ? sanitizeKey(value.tone)
+      : SERVICE_BENEFIT_CARD_TONES[index % SERVICE_BENEFIT_CARD_TONES.length];
+
+    result.push({
+      title,
+      description,
+      icon: normalizeIconClass(value.icon ?? value.icon_class, SERVICE_BENEFIT_CARD_ICONS[index % SERVICE_BENEFIT_CARD_ICONS.length]),
+      tone,
+    });
+  });
 
   return result;
 }
@@ -530,6 +590,7 @@ function normalizeServicePayload(payload) {
     primary_service_term_id: primaryServiceTermId,
     related_term_ids: normalizeIntegerArray(payload?.related_term_ids),
     who_this_is_for: normalizeStringList(payload?.who_this_is_for, "who_this_is_for"),
+    benefit_cards: normalizeBenefitCards(payload?.benefit_cards),
     problems_covered: normalizeStringList(payload?.problems_covered, "problems_covered"),
     included_items: normalizeStringList(payload?.included_items, "included_items"),
     excluded_items: normalizeStringList(payload?.excluded_items, "excluded_items"),
@@ -1110,6 +1171,7 @@ async function serializeService(row, { publicOnly = false } = {}) {
     locations: relationships.locations,
     languages: relationships.languages,
     who_this_is_for: Array.isArray(row.who_this_is_for) ? row.who_this_is_for : [],
+    benefit_cards: Array.isArray(row.benefit_cards) ? row.benefit_cards : [],
     problems_covered: Array.isArray(row.problems_covered) ? row.problems_covered : [],
     included_items: Array.isArray(row.included_items) ? row.included_items : [],
     excluded_items: Array.isArray(row.excluded_items) ? row.excluded_items : [],
@@ -1224,6 +1286,7 @@ function serviceToMutablePayload(service) {
       .map((term) => term.id)
       .filter((termId) => termId !== service.primary_service_term_id),
     who_this_is_for: service.who_this_is_for,
+    benefit_cards: service.benefit_cards,
     problems_covered: service.problems_covered,
     included_items: service.included_items,
     excluded_items: service.excluded_items,
@@ -1315,23 +1378,24 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
            is_indexable = $16,
            primary_service_term_id = $17,
            who_this_is_for = $18::jsonb,
-           problems_covered = $19::jsonb,
-           included_items = $20::jsonb,
-           excluded_items = $21::jsonb,
-           required_information = $22::jsonb,
-           deliverables = $23::jsonb,
-           documents_required = $24::jsonb,
-           process_steps = $25::jsonb,
-           duration_text = $26,
-           turnaround_time_text = $27,
-           disclaimer_text = $28,
-           refund_cancellation_policy_text = $29,
-           location_coverage_note = $30,
-           consultations_completed_count = $31,
-           current_viewers_count = $32,
-           years_of_experience = $33,
-           enabled_trust_badges = $34::jsonb,
-           published_at = $35,
+           benefit_cards = $19::jsonb,
+           problems_covered = $20::jsonb,
+           included_items = $21::jsonb,
+           excluded_items = $22::jsonb,
+           required_information = $23::jsonb,
+           deliverables = $24::jsonb,
+           documents_required = $25::jsonb,
+           process_steps = $26::jsonb,
+           duration_text = $27,
+           turnaround_time_text = $28,
+           disclaimer_text = $29,
+           refund_cancellation_policy_text = $30,
+           location_coverage_note = $31,
+           consultations_completed_count = $32,
+           current_viewers_count = $33,
+           years_of_experience = $34,
+           enabled_trust_badges = $35::jsonb,
+           published_at = $36,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -1353,6 +1417,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.is_indexable,
         payload.primary_service_term_id,
         JSON.stringify(payload.who_this_is_for),
+        JSON.stringify(payload.benefit_cards),
         JSON.stringify(payload.problems_covered),
         JSON.stringify(payload.included_items),
         JSON.stringify(payload.excluded_items),
@@ -1392,6 +1457,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
          is_indexable,
          primary_service_term_id,
          who_this_is_for,
+         benefit_cards,
          problems_covered,
          included_items,
          excluded_items,
@@ -1414,8 +1480,8 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
          $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb, $20::jsonb,
-         $21::jsonb, $22::jsonb, $23::jsonb, $24::jsonb, $25, $26, $27, $28, $29, $30,
-         $31, $32, $33::jsonb, $34, $35
+         $21::jsonb, $22::jsonb, $23::jsonb, $24::jsonb, $25::jsonb, $26, $27, $28, $29,
+         $30, $31, $32, $33, $34::jsonb, $35, $36
        )
        RETURNING id`,
       [
@@ -1436,6 +1502,7 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.is_indexable,
         payload.primary_service_term_id,
         JSON.stringify(payload.who_this_is_for),
+        JSON.stringify(payload.benefit_cards),
         JSON.stringify(payload.problems_covered),
         JSON.stringify(payload.included_items),
         JSON.stringify(payload.excluded_items),

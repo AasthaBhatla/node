@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "nodemon --legacy-watch --watch . --ext js,json --signal SIGTERM server.js",
     "admin-config:import": "node scripts/importAdminConfigFromFile.js",
+    "services:seed-benefits": "node scripts/seedServiceBenefitCards.js",
     "notif-worker": "node workers/notificationWorker.js",
     "expert-connect-worker": "node workers/expertConnectWorker.js"
   },
