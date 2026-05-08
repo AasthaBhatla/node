@@ -839,6 +839,7 @@ async function listPublicBlogs(filters = {}) {
   const { values, whereSql } = buildBlogFilters(filters, { publicOnly: true });
   const limit = normalizeLimit(filters.limit);
   const offset = normalizeOffset(filters.offset);
+  const orderBy = normalizeSort(filters.sort_by, filters.sort_order);
   values.push(limit, offset);
 
   const publicResult = await pool.query(
@@ -854,12 +855,12 @@ async function listPublicBlogs(filters = {}) {
        b.meta_description,
        b.related_service_id,
        b.published_at,
-       b.created_at,
-       b.updated_at,
-       COUNT(*) OVER()::int AS total_count
+      b.created_at,
+      b.updated_at,
+      COUNT(*) OVER()::int AS total_count
      FROM blogs b
      ${whereSql}
-     ORDER BY COALESCE(b.published_at, b.created_at) DESC, b.id DESC
+     ORDER BY ${orderBy}
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values,
   );

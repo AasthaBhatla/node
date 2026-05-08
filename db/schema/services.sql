@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS services (
   short_description TEXT,
   featured_image_url TEXT,
   featured_image_alt TEXT,
+  custom_content_title TEXT,
+  custom_content_html TEXT,
   meta_title TEXT,
   meta_description TEXT,
   canonical_url_override TEXT,
@@ -103,6 +105,12 @@ ALTER TABLE IF EXISTS services
 
 ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS service_type service_type NOT NULL DEFAULT 'consultation';
+
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS custom_content_title TEXT;
+
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS custom_content_html TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_services_service_type
   ON services (service_type);

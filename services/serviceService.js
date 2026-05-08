@@ -41,6 +41,22 @@ function normalizeNullableString(value) {
   return text === "" ? null : text;
 }
 
+function normalizeHtmlContent(value) {
+  const html = normalizeString(value);
+  if (!html) {
+    return null;
+  }
+
+  const plainText = html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hasMeaningfulElement = /<(?:img|table|hr)\b/i.test(html);
+
+  return plainText || hasMeaningfulElement ? html : null;
+}
+
 function normalizePublicSiteBaseUrl(value) {
   const normalized = normalizeString(value).replace(/\/+$/, "");
   return normalized || "https://kaptaan.law";
@@ -503,6 +519,8 @@ function normalizeServicePayload(payload) {
     short_description: normalizeNullableString(payload?.short_description),
     featured_image_url: normalizeNullableString(payload?.featured_image_url),
     featured_image_alt: normalizeNullableString(payload?.featured_image_alt),
+    custom_content_title: normalizeNullableString(payload?.custom_content_title),
+    custom_content_html: normalizeHtmlContent(payload?.custom_content_html),
     meta_title: normalizeNullableString(payload?.meta_title),
     meta_description: normalizeNullableString(payload?.meta_description),
     canonical_url_override: normalizeNullableString(payload?.canonical_url_override),
@@ -1067,6 +1085,8 @@ async function serializeService(row, { publicOnly = false } = {}) {
     short_description: row.short_description,
     featured_image_url: row.featured_image_url,
     featured_image_alt: row.featured_image_alt,
+    custom_content_title: row.custom_content_title,
+    custom_content_html: row.custom_content_html,
     meta_title: row.meta_title,
     meta_description: row.meta_description,
     canonical_url_override: row.canonical_url_override,
@@ -1191,6 +1211,8 @@ function serviceToMutablePayload(service) {
     short_description: service.short_description,
     featured_image_url: service.featured_image_url,
     featured_image_alt: service.featured_image_alt,
+    custom_content_title: service.custom_content_title,
+    custom_content_html: service.custom_content_html,
     meta_title: service.meta_title,
     meta_description: service.meta_description,
     canonical_url_override: service.canonical_url_override,
@@ -1283,31 +1305,33 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
            short_description = $6,
            featured_image_url = $7,
            featured_image_alt = $8,
-           meta_title = $9,
-           meta_description = $10,
-           canonical_url_override = $11,
-           og_title = $12,
-           og_description = $13,
-           is_indexable = $14,
-           primary_service_term_id = $15,
-           who_this_is_for = $16::jsonb,
-           problems_covered = $17::jsonb,
-           included_items = $18::jsonb,
-           excluded_items = $19::jsonb,
-           required_information = $20::jsonb,
-           deliverables = $21::jsonb,
-           documents_required = $22::jsonb,
-           process_steps = $23::jsonb,
-           duration_text = $24,
-           turnaround_time_text = $25,
-           disclaimer_text = $26,
-           refund_cancellation_policy_text = $27,
-           location_coverage_note = $28,
-           consultations_completed_count = $29,
-           current_viewers_count = $30,
-           years_of_experience = $31,
-           enabled_trust_badges = $32::jsonb,
-           published_at = $33,
+           custom_content_title = $9,
+           custom_content_html = $10,
+           meta_title = $11,
+           meta_description = $12,
+           canonical_url_override = $13,
+           og_title = $14,
+           og_description = $15,
+           is_indexable = $16,
+           primary_service_term_id = $17,
+           who_this_is_for = $18::jsonb,
+           problems_covered = $19::jsonb,
+           included_items = $20::jsonb,
+           excluded_items = $21::jsonb,
+           required_information = $22::jsonb,
+           deliverables = $23::jsonb,
+           documents_required = $24::jsonb,
+           process_steps = $25::jsonb,
+           duration_text = $26,
+           turnaround_time_text = $27,
+           disclaimer_text = $28,
+           refund_cancellation_policy_text = $29,
+           location_coverage_note = $30,
+           consultations_completed_count = $31,
+           current_viewers_count = $32,
+           years_of_experience = $33,
+           enabled_trust_badges = $34::jsonb,
+           published_at = $35,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1`,
       [
@@ -1319,6 +1343,8 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.short_description,
         payload.featured_image_url,
         payload.featured_image_alt,
+        payload.custom_content_title,
+        payload.custom_content_html,
         payload.meta_title,
         payload.meta_description,
         payload.canonical_url_override,
@@ -1356,6 +1382,8 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
          short_description,
          featured_image_url,
          featured_image_alt,
+         custom_content_title,
+         custom_content_html,
          meta_title,
          meta_description,
          canonical_url_override,
@@ -1385,9 +1413,9 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb,
-         $20::jsonb, $21::jsonb, $22::jsonb, $23, $24, $25, $26, $27, $28, $29,
-         $30, $31::jsonb, $32, $33
+         $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb, $20::jsonb,
+         $21::jsonb, $22::jsonb, $23::jsonb, $24::jsonb, $25, $26, $27, $28, $29, $30,
+         $31, $32, $33::jsonb, $34, $35
        )
        RETURNING id`,
       [
@@ -1398,6 +1426,8 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
         payload.short_description,
         payload.featured_image_url,
         payload.featured_image_alt,
+        payload.custom_content_title,
+        payload.custom_content_html,
         payload.meta_title,
         payload.meta_description,
         payload.canonical_url_override,
