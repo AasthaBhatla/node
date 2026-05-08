@@ -26,9 +26,9 @@ app.use(
   webhookRoutes,
 );
 
-// Normal JSON parsing for everything else
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
+// Admin rich-content editors can send larger HTML payloads.
+app.use(express.json({ limit: "8mb" }));
+app.use(express.urlencoded({ extended: true, limit: "8mb" }));
 
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
