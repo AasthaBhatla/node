@@ -2324,6 +2324,11 @@ async function listPublicServices(filters = {}) {
      LEFT JOIN taxonomy primary_taxonomy ON primary_taxonomy.id = primary_term.taxonomy_id
      WHERE ${conditions.join(" AND ")}
      ORDER BY
+       CASE
+         WHEN s.service_type = 'documents' AND s.document_sort_order > 0 THEN 0
+         WHEN s.service_type = 'documents' THEN 1
+         ELSE 0
+       END ASC,
        CASE WHEN s.service_type = 'documents' THEN s.document_sort_order ELSE 0 END ASC,
        COALESCE(s.published_at, s.updated_at) DESC,
        s.id DESC
