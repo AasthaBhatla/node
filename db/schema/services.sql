@@ -126,7 +126,11 @@ ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS document_download_count INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS is_package_featured BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS package_sort_order INT NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS document_sort_order INT NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS document_sort_order INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS document_filter_category TEXT,
+  ADD COLUMN IF NOT EXISTS document_filter_purpose TEXT,
+  ADD COLUMN IF NOT EXISTS document_filter_people TEXT,
+  ADD COLUMN IF NOT EXISTS document_filter_execution_flags JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_services_service_type
   ON services (service_type);
@@ -137,6 +141,22 @@ CREATE INDEX IF NOT EXISTS idx_services_documents_catalog
 
 CREATE INDEX IF NOT EXISTS idx_services_documents_packages
   ON services (service_type, is_package_featured, package_sort_order ASC, id DESC)
+  WHERE service_type = 'documents';
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_filter_category
+  ON services (document_filter_category)
+  WHERE service_type = 'documents';
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_filter_purpose
+  ON services (document_filter_purpose)
+  WHERE service_type = 'documents';
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_filter_people
+  ON services (document_filter_people)
+  WHERE service_type = 'documents';
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_filter_execution
+  ON services USING GIN (document_filter_execution_flags)
   WHERE service_type = 'documents';
 
 DO $$

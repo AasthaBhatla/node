@@ -17,6 +17,23 @@ BEGIN
   WHERE slug = 'services'
   LIMIT 1;
 
+  INSERT INTO locations (slug, title)
+  VALUES
+    ('jaipur', 'Jaipur'),
+    ('jaisalmer', 'Jaisalmer'),
+    ('bengaluru', 'Bengaluru'),
+    ('hyderabad', 'Hyderabad'),
+    ('delhi-ncr', 'Delhi-NCR'),
+    ('mumbai', 'Mumbai'),
+    ('kolkata', 'Kolkata'),
+    ('chennai', 'Chennai'),
+    ('pune', 'Pune'),
+    ('chandigarh', 'Chandigarh'),
+    ('ahmedabad', 'Ahmedabad'),
+    ('kochi', 'Kochi')
+  ON CONFLICT (slug) DO UPDATE
+  SET title = EXCLUDED.title;
+
   CREATE TEMP TABLE document_seed_terms (
     slug TEXT,
     title TEXT
@@ -295,6 +312,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION set_document_filters(
+  p_slug TEXT,
+  p_category TEXT,
+  p_purpose TEXT,
+  p_people TEXT,
+  p_execution_flags JSONB,
+  p_location_slugs TEXT[]
+) RETURNS VOID AS $$
+DECLARE
+  v_service_id BIGINT;
+BEGIN
+  SELECT id INTO v_service_id
+  FROM services
+  WHERE slug = p_slug
+    AND service_type = 'documents'
+  LIMIT 1;
+
+  IF v_service_id IS NULL THEN
+    RAISE EXCEPTION 'Missing document service %', p_slug;
+  END IF;
+
+  UPDATE services
+  SET document_filter_category = p_category,
+      document_filter_purpose = p_purpose,
+      document_filter_people = p_people,
+      document_filter_execution_flags = COALESCE(p_execution_flags, '[]'::jsonb),
+      updated_at = CURRENT_TIMESTAMP
+  WHERE id = v_service_id;
+
+  DELETE FROM service_location_relationships
+  WHERE service_id = v_service_id;
+
+  INSERT INTO service_location_relationships (service_id, location_id)
+  SELECT v_service_id, location.id
+  FROM locations location
+  WHERE location.slug = ANY(p_location_slugs)
+  ON CONFLICT (service_id, location_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
 SELECT seed_document_service('Business Suite', 'document-business-suite', 'Essential business documents for operating, contracting, and staying compliant.', 'circle-slash', 'orange', 12400, TRUE, 0, 1, 'business-documents', '[
   {"title":"Basic Customisation","summary":"Answer simple questions and generate a starter document.","features":["Answer simple questions","Auto generated through verified templates","Download instantly"],"highlight":"Best for quick and simple needs","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Premium Customisation","summary":"A document expert prepares a tailored version.","features":["Task to our document expert","Personalised and professionally crafted","Delivered in 24-48 hours","Up to 2 revisions included"],"highlight":"A human expert will understand your needs and create a tailored document for you","icon":"headset","tone":"violet","price_label":"Starting From ₹2,000/-","price_paise":200000,"compare_at_price_paise":300000,"sort_order":1}
@@ -393,4 +450,26 @@ SELECT seed_document_service('Will Draft', 'document-will-draft', 'Prepare a wil
   {"title":"Expert Will Draft","summary":"Get a professionally reviewed will.","features":["Succession review","Witness and execution guidance","Two revisions included"],"highlight":"Recommended for family and asset complexity","icon":"headset","tone":"violet","price_label":"Starting From ₹2,499/-","price_paise":249900,"sort_order":1}
 ]'::jsonb);
 
+SELECT set_document_filters('document-business-suite', 'business', 'start_business', 'business_business', '["registration_required","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','delhi-ncr','mumbai','bengaluru']);
+SELECT set_document_filters('document-gst-packages', 'finance', 'start_business', 'business_business', '["registration_required"]'::jsonb, ARRAY['jaipur','delhi-ncr','mumbai','bengaluru','pune']);
+SELECT set_document_filters('document-startup-legal-kit', 'business', 'start_business', 'partners_cofounders', '["registration_required","notarisation_recommended"]'::jsonb, ARRAY['bengaluru','hyderabad','delhi-ncr','mumbai']);
+SELECT set_document_filters('document-property-paperwork-kit', 'property', 'rent_lease', 'landlord_tenant', '["registration_required","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','jaisalmer','mumbai','pune','ahmedabad']);
+SELECT set_document_filters('document-hr-hiring-kit', 'employment_hr', 'hire', 'employer_employee', '["stamp_paper_needed"]'::jsonb, ARRAY['delhi-ncr','bengaluru','hyderabad','chennai']);
+SELECT set_document_filters('document-family-documents-kit', 'dispute', 'services', 'individual_individual', '["notarisation_recommended"]'::jsonb, ARRAY['jaipur','mumbai','kolkata','kochi']);
+SELECT set_document_filters('document-compliance-starter-kit', 'finance', 'start_business', 'business_business', '["registration_required"]'::jsonb, ARRAY['delhi-ncr','mumbai','bengaluru','chandigarh']);
+SELECT set_document_filters('document-nda', 'business', 'confidentiality', 'individual_business', '["notarisation_recommended","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','delhi-ncr','mumbai','bengaluru','pune']);
+SELECT set_document_filters('document-service-agreement', 'business', 'services', 'business_business', '["stamp_paper_needed"]'::jsonb, ARRAY['delhi-ncr','mumbai','bengaluru','hyderabad','chennai']);
+SELECT set_document_filters('document-rent-agreement', 'property', 'rent_lease', 'landlord_tenant', '["registration_required","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','jaisalmer','mumbai','pune','ahmedabad']);
+SELECT set_document_filters('document-power-of-attorney', 'property', 'sale_purchase', 'individual_individual', '["notarisation_recommended","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','delhi-ncr','kolkata','kochi']);
+SELECT set_document_filters('document-moa', 'business', 'start_business', 'partners_cofounders', '["registration_required"]'::jsonb, ARRAY['delhi-ncr','mumbai','bengaluru','hyderabad']);
+SELECT set_document_filters('document-police-verification', 'dispute', 'services', 'individual_business', '["registration_required"]'::jsonb, ARRAY['jaipur','delhi-ncr','mumbai','kolkata']);
+SELECT set_document_filters('document-employment-agreement', 'employment_hr', 'hire', 'employer_employee', '["stamp_paper_needed"]'::jsonb, ARRAY['delhi-ncr','bengaluru','hyderabad','chennai','pune']);
+SELECT set_document_filters('document-partnership-deed', 'business', 'start_business', 'partners_cofounders', '["registration_required","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','mumbai','bengaluru','ahmedabad']);
+SELECT set_document_filters('document-legal-notice', 'dispute', 'services', 'individual_business', '["notarisation_recommended"]'::jsonb, ARRAY['jaipur','delhi-ncr','mumbai','kolkata']);
+SELECT set_document_filters('document-affidavit', 'dispute', 'services', 'individual_individual', '["notarisation_recommended","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','jaisalmer','kolkata','kochi']);
+SELECT set_document_filters('document-sale-agreement', 'property', 'sale_purchase', 'individual_business', '["registration_required","stamp_paper_needed"]'::jsonb, ARRAY['jaipur','mumbai','pune','ahmedabad']);
+SELECT set_document_filters('document-trademark-authorization', 'ipr', 'start_business', 'business_business', '["registration_required"]'::jsonb, ARRAY['delhi-ncr','mumbai','bengaluru','chandigarh']);
+SELECT set_document_filters('document-will-draft', 'property', 'services', 'individual_individual', '["notarisation_recommended"]'::jsonb, ARRAY['jaipur','mumbai','kolkata','kochi']);
+
 DROP FUNCTION IF EXISTS seed_document_service(TEXT, TEXT, TEXT, TEXT, TEXT, INT, BOOLEAN, INT, INT, TEXT, JSONB);
+DROP FUNCTION IF EXISTS set_document_filters(TEXT, TEXT, TEXT, TEXT, JSONB, TEXT[]);

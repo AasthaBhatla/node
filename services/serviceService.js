@@ -27,6 +27,37 @@ const DOCUMENT_ICON_TONES = [
   "slate",
 ];
 const VARIANT_TONES = ["green", "violet", "blue", "orange", "pink"];
+const DOCUMENT_FILTER_OPTIONS = {
+  categories: [
+    { value: "business", label: "Business" },
+    { value: "property", label: "Property" },
+    { value: "employment_hr", label: "Employment / HR" },
+    { value: "finance", label: "Finance" },
+    { value: "dispute", label: "Dispute" },
+    { value: "ipr", label: "IPR" },
+  ],
+  purposes: [
+    { value: "start_business", label: "Start Business" },
+    { value: "hire", label: "Hire" },
+    { value: "rent_lease", label: "Rent/ Lease" },
+    { value: "confidentiality", label: "Confidentiality" },
+    { value: "sale_purchase", label: "Sale/ Purchase" },
+    { value: "services", label: "Services" },
+  ],
+  people: [
+    { value: "individual_individual", label: "Individual ↔ Individual" },
+    { value: "individual_business", label: "Individual ↔ Business" },
+    { value: "business_business", label: "Business ↔ Business" },
+    { value: "landlord_tenant", label: "Landlord ↔ Tenant" },
+    { value: "employer_employee", label: "Employer ↔ Employee" },
+    { value: "partners_cofounders", label: "Partners/ Co-Founders" },
+  ],
+  execution: [
+    { value: "registration_required", label: "Registration required", description: "Formal government filing needed" },
+    { value: "notarisation_recommended", label: "Notarisation recommended", description: "Recommended for added validity" },
+    { value: "stamp_paper_needed", label: "Stamp paper needed", description: "Specific duty payments apply" },
+  ],
+};
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
@@ -153,6 +184,36 @@ function normalizeIntegerArray(values) {
 
   return [...new Set(
     values
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value) && value > 0),
+    )];
+}
+
+function normalizeQueryArray(values) {
+  const rawValues = Array.isArray(values)
+    ? values
+    : values === undefined || values === null || values === ""
+      ? []
+      : String(values).split(",");
+
+  return rawValues
+    .flatMap((value) => String(value).split(","))
+    .map((value) => normalizeString(value))
+    .filter(Boolean);
+}
+
+function normalizeQueryKeyArray(values, allowedOptions = []) {
+  const allowed = new Set(allowedOptions.map((option) => option.value));
+  return [...new Set(
+    normalizeQueryArray(values)
+      .map((value) => sanitizeKey(value))
+      .filter((value) => value && (allowed.size === 0 || allowed.has(value))),
+  )];
+}
+
+function normalizeQueryIntegerArray(values) {
+  return [...new Set(
+    normalizeQueryArray(values)
       .map((value) => Number.parseInt(value, 10))
       .filter((value) => Number.isInteger(value) && value > 0),
   )];
@@ -1239,6 +1300,12 @@ async function serializeService(row, { publicOnly = false } = {}) {
     is_package_featured: Boolean(row.is_package_featured),
     package_sort_order: Number(row.package_sort_order || 0),
     document_sort_order: Number(row.document_sort_order || 0),
+    document_filter_category: row.document_filter_category,
+    document_filter_purpose: row.document_filter_purpose,
+    document_filter_people: row.document_filter_people,
+    document_filter_execution_flags: Array.isArray(row.document_filter_execution_flags)
+      ? row.document_filter_execution_flags
+      : [],
     custom_content_title: row.custom_content_title,
     custom_content_html: row.custom_content_html,
     meta_title: row.meta_title,
@@ -2108,10 +2175,27 @@ async function listPublicServices(filters = {}) {
   const search = normalizeString(filters.search);
   const termId = normalizePositiveInteger(filters.term_id, "term_id", { fallback: null });
   const locationId = normalizePositiveInteger(filters.location_id, "location_id", { fallback: null });
+  const locationIds = normalizeQueryIntegerArray(filters.location_ids ?? filters.jurisdiction_ids);
   const languageId = normalizePositiveInteger(filters.language_id, "language_id", { fallback: null });
   const publicServiceType = normalizeString(filters.service_type)
     ? normalizeServiceType(filters.service_type)
     : null;
+  const documentCategories = normalizeQueryKeyArray(
+    filters.document_category ?? filters.document_categories ?? filters.category,
+    DOCUMENT_FILTER_OPTIONS.categories,
+  );
+  const documentPurposes = normalizeQueryKeyArray(
+    filters.document_purpose ?? filters.document_purposes ?? filters.purpose,
+    DOCUMENT_FILTER_OPTIONS.purposes,
+  );
+  const documentPeople = normalizeQueryKeyArray(
+    filters.document_people ?? filters.people,
+    DOCUMENT_FILTER_OPTIONS.people,
+  );
+  const documentExecutionFlags = normalizeQueryKeyArray(
+    filters.document_execution ?? filters.document_execution_flags ?? filters.execution,
+    DOCUMENT_FILTER_OPTIONS.execution,
+  );
 
   const values = ["published"];
   const conditions = [`s.status = $1`];
@@ -2134,14 +2218,15 @@ async function listPublicServices(filters = {}) {
     );
   }
 
-  if (locationId) {
-    values.push(locationId);
+  const combinedLocationIds = [...new Set([...(locationId ? [locationId] : []), ...locationIds])];
+  if (combinedLocationIds.length > 0) {
+    values.push(combinedLocationIds);
     conditions.push(
       `EXISTS (
          SELECT 1
          FROM service_location_relationships rel
          WHERE rel.service_id = s.id
-           AND rel.location_id = $${values.length}
+           AND rel.location_id = ANY($${values.length}::int[])
        )`,
     );
   }
@@ -2181,6 +2266,26 @@ async function listPublicServices(filters = {}) {
     );
   }
 
+  if (documentCategories.length > 0) {
+    values.push(documentCategories);
+    conditions.push(`s.document_filter_category = ANY($${values.length}::text[])`);
+  }
+
+  if (documentPurposes.length > 0) {
+    values.push(documentPurposes);
+    conditions.push(`s.document_filter_purpose = ANY($${values.length}::text[])`);
+  }
+
+  if (documentPeople.length > 0) {
+    values.push(documentPeople);
+    conditions.push(`s.document_filter_people = ANY($${values.length}::text[])`);
+  }
+
+  if (documentExecutionFlags.length > 0) {
+    values.push(documentExecutionFlags);
+    conditions.push(`s.document_filter_execution_flags ?| $${values.length}::text[]`);
+  }
+
   values.push(limit, offset);
 
   const result = await pool.query(
@@ -2202,6 +2307,10 @@ async function listPublicServices(filters = {}) {
        s.is_package_featured,
        s.package_sort_order,
        s.document_sort_order,
+       s.document_filter_category,
+       s.document_filter_purpose,
+       s.document_filter_people,
+       s.document_filter_execution_flags,
        s.published_at,
        s.primary_service_term_id,
        primary_taxonomy.slug AS primary_service_taxonomy_slug,
@@ -2362,6 +2471,12 @@ async function listPublicServices(filters = {}) {
       is_package_featured: Boolean(row.is_package_featured),
       package_sort_order: Number(row.package_sort_order || 0),
       document_sort_order: Number(row.document_sort_order || 0),
+      document_filter_category: row.document_filter_category,
+      document_filter_purpose: row.document_filter_purpose,
+      document_filter_people: row.document_filter_people,
+      document_filter_execution_flags: Array.isArray(row.document_filter_execution_flags)
+        ? row.document_filter_execution_flags
+        : [],
       published_at: row.published_at,
       starting_price_paise: Number(row.starting_price_paise || 0),
       active_variant_count: Number(row.active_variant_count || 0),
@@ -2391,7 +2506,15 @@ async function listPublicServices(filters = {}) {
 }
 
 async function listPublicServiceFilters() {
-  const [serviceTypesResult, primaryTermsResult, termsResult, locationsResult, languagesResult] = await Promise.all([
+  const [
+    serviceTypesResult,
+    primaryTermsResult,
+    termsResult,
+    locationsResult,
+    languagesResult,
+    documentFilterCountsResult,
+    documentLocationsResult,
+  ] = await Promise.all([
     pool.query(
       `SELECT
          s.service_type,
@@ -2480,7 +2603,93 @@ async function listPublicServiceFilters() {
        GROUP BY language.id
        ORDER BY count DESC, language.title ASC, language.id ASC`,
     ),
+    pool.query(
+      `WITH document_filter_values AS (
+         SELECT
+           'categories' AS group_key,
+           s.document_filter_category AS value,
+           s.id AS service_id
+         FROM services s
+         WHERE s.status = 'published'
+           AND s.service_type = 'documents'
+           AND COALESCE(BTRIM(s.document_filter_category), '') <> ''
+
+         UNION ALL
+
+         SELECT
+           'purposes' AS group_key,
+           s.document_filter_purpose AS value,
+           s.id AS service_id
+         FROM services s
+         WHERE s.status = 'published'
+           AND s.service_type = 'documents'
+           AND COALESCE(BTRIM(s.document_filter_purpose), '') <> ''
+
+         UNION ALL
+
+         SELECT
+           'people' AS group_key,
+           s.document_filter_people AS value,
+           s.id AS service_id
+         FROM services s
+         WHERE s.status = 'published'
+           AND s.service_type = 'documents'
+           AND COALESCE(BTRIM(s.document_filter_people), '') <> ''
+
+         UNION ALL
+
+         SELECT
+           'execution' AS group_key,
+           execution.value,
+           s.id AS service_id
+         FROM services s
+         CROSS JOIN LATERAL jsonb_array_elements_text(
+           CASE
+             WHEN jsonb_typeof(s.document_filter_execution_flags) = 'array'
+               THEN s.document_filter_execution_flags
+             ELSE '[]'::jsonb
+           END
+         ) execution(value)
+         WHERE s.status = 'published'
+           AND s.service_type = 'documents'
+       )
+       SELECT
+         group_key,
+         value,
+         COUNT(DISTINCT service_id)::int AS count
+       FROM document_filter_values
+       GROUP BY group_key, value`,
+    ),
+    pool.query(
+      `SELECT
+         location.id,
+         NULL::int AS taxonomy_id,
+         NULL::text AS taxonomy_slug,
+         location.slug,
+         location.title,
+         COUNT(DISTINCT rel.service_id)::int AS count
+       FROM service_location_relationships rel
+       JOIN services s ON s.id = rel.service_id
+       JOIN locations location ON location.id = rel.location_id
+       WHERE s.status = 'published'
+         AND s.service_type = 'documents'
+       GROUP BY location.id
+       ORDER BY count DESC, location.title ASC, location.id ASC`,
+    ),
   ]);
+
+  const documentCountByGroup = documentFilterCountsResult.rows.reduce((acc, row) => {
+    if (!acc[row.group_key]) {
+      acc[row.group_key] = new Map();
+    }
+    acc[row.group_key].set(row.value, Number(row.count || 0));
+    return acc;
+  }, {});
+  const withDocumentCounts = (groupKey) =>
+    DOCUMENT_FILTER_OPTIONS[groupKey].map((option) => ({
+      ...option,
+      count: documentCountByGroup[groupKey]?.get(option.value) || 0,
+    }));
 
   return {
     service_types: SERVICE_TYPE_OPTIONS.map((option) => {
@@ -2495,6 +2704,13 @@ async function listPublicServiceFilters() {
     terms: normalizePublicCatalogItems(termsResult.rows),
     locations: normalizePublicCatalogItems(locationsResult.rows),
     languages: normalizePublicCatalogItems(languagesResult.rows),
+    document_filters: {
+      categories: withDocumentCounts("categories"),
+      purposes: withDocumentCounts("purposes"),
+      people: withDocumentCounts("people"),
+      execution: withDocumentCounts("execution"),
+      jurisdictions: normalizePublicCatalogItems(documentLocationsResult.rows),
+    },
   };
 }
 
