@@ -304,65 +304,90 @@ SELECT seed_document_service('GST Packages', 'document-gst-packages', 'Documents
   {"title":"GST Assisted Filing","summary":"Expert guided GST registration support.","features":["Expert document review","Application support","Follow-up clarification included"],"highlight":"Best when you want guided filing support","icon":"headset","tone":"violet","price_label":"Starting From ₹1,499/-","price_paise":149900,"compare_at_price_paise":249900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('NDA', 'document-nda', 'Restricts people from sharing confidential information with others.', 'circle-slash', 'orange', 12400, FALSE, 0, 3, 'agreements', '[
+SELECT seed_document_service('Startup Legal Kit', 'document-startup-legal-kit', 'Core startup documents for founders, teams, and early vendor work.', 'file-check', 'violet', 2600, TRUE, 2, 3, 'business-documents', '[
+  {"title":"Startup Checklist","summary":"Generate a starter checklist for core startup documents.","features":["Founder document checklist","Vendor and employee basics","Download instantly"],"highlight":"Best for early startup planning","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
+  {"title":"Expert Startup Kit","summary":"Expert assistance for founder and early business documents.","features":["Founder agreement guidance","NDA and vendor document support","Delivered in 24-48 hours"],"highlight":"Recommended before onboarding vendors or partners","icon":"headset","tone":"violet","price_label":"Starting From ₹3,499/-","price_paise":349900,"compare_at_price_paise":499900,"sort_order":1}
+]'::jsonb);
+
+SELECT seed_document_service('Property Paperwork Kit', 'document-property-paperwork-kit', 'Rental, sale, and ownership paperwork support in one place.', 'home', 'pink', 1900, TRUE, 3, 4, 'property-documents', '[
+  {"title":"Property Checklist","summary":"Prepare the paperwork checklist for your property use case.","features":["Rental and sale checklist","Party detail capture","Download instantly"],"highlight":"Useful before sharing property documents","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
+  {"title":"Assisted Property Kit","summary":"Expert support for preparing property paperwork.","features":["Agreement drafting support","Clause and document review","Delivered in 24-48 hours"],"highlight":"Best when property terms need review","icon":"headset","tone":"violet","price_label":"Starting From ₹2,999/-","price_paise":299900,"compare_at_price_paise":399900,"sort_order":1}
+]'::jsonb);
+
+SELECT seed_document_service('HR & Hiring Kit', 'document-hr-hiring-kit', 'Employment, contractor, and HR documents for growing teams.', 'handshake', 'blue', 1700, TRUE, 4, 5, 'employment-documents', '[
+  {"title":"Hiring Checklist","summary":"Generate a basic hiring document checklist.","features":["Employee and contractor checklist","Policy document list","Download instantly"],"highlight":"Good for first hires and contractors","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
+  {"title":"HR Document Pack","summary":"Expert prepared hiring and HR document support.","features":["Employment agreement support","Contractor terms guidance","Two revisions included"],"highlight":"Recommended for teams hiring regularly","icon":"headset","tone":"violet","price_label":"Starting From ₹2,499/-","price_paise":249900,"compare_at_price_paise":349900,"sort_order":1}
+]'::jsonb);
+
+SELECT seed_document_service('Family Documents Kit', 'document-family-documents-kit', 'Personal and family legal documents for important life decisions.', 'file-check', 'orange', 1500, TRUE, 5, 6, 'personal-legal-documents', '[
+  {"title":"Family Checklist","summary":"Generate a checklist for personal and family documents.","features":["Will and affidavit checklist","Basic declaration guidance","Download instantly"],"highlight":"Useful for simple personal planning","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
+  {"title":"Expert Family Kit","summary":"Expert assistance for personal and family legal documents.","features":["Purpose-specific drafting","Execution guidance","Delivered in 24-48 hours"],"highlight":"Best when family details need careful wording","icon":"headset","tone":"violet","price_label":"Starting From ₹1,999/-","price_paise":199900,"compare_at_price_paise":299900,"sort_order":1}
+]'::jsonb);
+
+SELECT seed_document_service('Compliance Starter Kit', 'document-compliance-starter-kit', 'Basic compliance document support for small businesses and teams.', 'shield', 'green', 2100, TRUE, 6, 7, 'compliance-documents', '[
+  {"title":"Compliance Checklist","summary":"Generate a starter compliance document checklist.","features":["Business compliance checklist","Registration and filing basics","Download instantly"],"highlight":"Good for organizing compliance documents","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
+  {"title":"Assisted Compliance Kit","summary":"Expert assisted compliance document preparation.","features":["Document review support","Compliance filing guidance","Follow-up clarification included"],"highlight":"Best for businesses that need guided compliance","icon":"headset","tone":"violet","price_label":"Starting From ₹2,999/-","price_paise":299900,"compare_at_price_paise":449900,"sort_order":1}
+]'::jsonb);
+
+SELECT seed_document_service('NDA', 'document-nda', 'Restricts people from sharing confidential information with others.', 'circle-slash', 'orange', 12400, FALSE, 0, 8, 'agreements', '[
   {"title":"Basic Customisation","summary":"Generate a simple NDA from verified templates.","features":["Answer simple questions","Auto generated through verified templates","Download instantly"],"highlight":"Best for quick and simple needs","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Premium Customisation","summary":"Get a tailored NDA prepared by a document expert.","features":["Expert reviews your needs","Confidentiality clauses customised","Delivered in 24-48 hours"],"highlight":"Recommended for business-sensitive information","icon":"headset","tone":"violet","price_label":"Starting From ₹999/-","price_paise":99900,"compare_at_price_paise":149900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Service Agreement', 'document-service-agreement', 'For contracts related to services to a second party.', 'handshake', 'blue', 1200, FALSE, 0, 4, 'agreements', '[
+SELECT seed_document_service('Service Agreement', 'document-service-agreement', 'For contracts related to services to a second party.', 'handshake', 'blue', 1200, FALSE, 0, 9, 'agreements', '[
   {"title":"Template Draft","summary":"Create a basic service agreement draft.","features":["Scope and payment terms","Basic obligations","Download draft instantly"],"highlight":"Good for standard service work","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Expert Draft","summary":"Have a professional prepare the agreement.","features":["Custom clauses","Risk review","Two revisions included"],"highlight":"Best for commercial service contracts","icon":"headset","tone":"violet","price_label":"Starting From ₹2,000/-","price_paise":200000,"compare_at_price_paise":300000,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Rent Agreement', 'document-rent-agreement', 'An agreement for renting a house or property.', 'home', 'pink', 7, FALSE, 0, 5, 'property-documents', '[
+SELECT seed_document_service('Rent Agreement', 'document-rent-agreement', 'An agreement for renting a house or property.', 'home', 'pink', 7, FALSE, 0, 10, 'property-documents', '[
   {"title":"Offer Draft","summary":"Try assisted rent agreement drafting for ₹1.","features":["Basic property details","Tenant and owner details","Draft request created"],"highlight":"Introductory offer for first-time users","icon":"file-check","tone":"orange","price_label":"₹1/-","price_paise":100,"sort_order":0,"is_default":true},
   {"title":"Expert Draft","summary":"Expert reviewed rent agreement for your property.","features":["Property-specific clauses","Security deposit terms","Delivered in 24 hours"],"highlight":"Recommended for enforceable rental terms","icon":"headset","tone":"violet","price_label":"Starting From ₹799/-","price_paise":79900,"compare_at_price_paise":119900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Power Of Attorney', 'document-power-of-attorney', 'Authorise someone to act on your behalf for a defined purpose.', 'arrow-left-right', 'green', 250, FALSE, 0, 6, 'personal-legal-documents', '[
+SELECT seed_document_service('Power Of Attorney', 'document-power-of-attorney', 'Authorise someone to act on your behalf for a defined purpose.', 'arrow-left-right', 'green', 250, FALSE, 0, 11, 'personal-legal-documents', '[
   {"title":"Premium Draft","summary":"Professionally drafted power of attorney.","features":["Authority scope reviewed","Execution guidance included","Delivered in 24-48 hours"],"highlight":"Best for important representative authority","icon":"shield","tone":"violet","price_label":"Starting From ₹2,500/-","price_paise":250000,"compare_at_price_paise":350000,"sort_order":0,"is_default":true}
 ]'::jsonb);
 
-SELECT seed_document_service('MOA', 'document-moa', 'Memorandum of association for company formation.', 'list', 'pink', 340, FALSE, 0, 7, 'company-documents', '[
+SELECT seed_document_service('MOA', 'document-moa', 'Memorandum of association for company formation.', 'list', 'pink', 340, FALSE, 0, 12, 'company-documents', '[
   {"title":"Company Draft","summary":"MOA drafting support for company formation.","features":["Object clause assistance","Company structure capture","Expert drafted document"],"highlight":"For companies that need professionally prepared incorporation documents","icon":"headset","tone":"violet","price_label":"Starting From ₹550/-","price_paise":55000,"compare_at_price_paise":99900,"sort_order":0,"is_default":true}
 ]'::jsonb);
 
-SELECT seed_document_service('Police Verification', 'document-police-verification', 'Application for police verification for different uses.', 'shield', 'green', 840, FALSE, 0, 8, 'identity-verification', '[
+SELECT seed_document_service('Police Verification', 'document-police-verification', 'Application for police verification for different uses.', 'shield', 'green', 840, FALSE, 0, 13, 'identity-verification', '[
   {"title":"Basic Application","summary":"Prepare a simple police verification application.","features":["Guided application fields","Purpose-specific draft","Download instantly"],"highlight":"Quick application preparation","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Assisted Application","summary":"Get assistance preparing and checking the application.","features":["Expert review","Document checklist","Submission guidance"],"highlight":"Useful when verification purpose is sensitive","icon":"headset","tone":"blue","price_label":"Starting From ₹499/-","price_paise":49900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Employment Agreement', 'document-employment-agreement', 'Employment terms for salary, role, confidentiality, and exit obligations.', 'file-check', 'blue', 910, FALSE, 0, 9, 'employment-documents', '[
+SELECT seed_document_service('Employment Agreement', 'document-employment-agreement', 'Employment terms for salary, role, confidentiality, and exit obligations.', 'file-check', 'blue', 910, FALSE, 0, 14, 'employment-documents', '[
   {"title":"Basic Draft","summary":"Create standard employment terms.","features":["Role and compensation fields","Basic confidentiality terms","Download draft instantly"],"highlight":"Good for simple hiring needs","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"HR Reviewed Draft","summary":"Expert reviewed employment agreement.","features":["Custom probation and exit terms","IP and confidentiality clauses","Two revisions included"],"highlight":"Recommended for startups and growing teams","icon":"headset","tone":"violet","price_label":"Starting From ₹1,499/-","price_paise":149900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Partnership Deed', 'document-partnership-deed', 'Define partner contributions, profit sharing, and exit terms.', 'handshake', 'violet', 620, FALSE, 0, 10, 'business-documents', '[
+SELECT seed_document_service('Partnership Deed', 'document-partnership-deed', 'Define partner contributions, profit sharing, and exit terms.', 'handshake', 'violet', 620, FALSE, 0, 15, 'business-documents', '[
   {"title":"Offer Draft","summary":"Create a partnership deed request for ₹1.","features":["Partner details","Profit sharing terms","Draft request created"],"highlight":"Introductory offer for partnership planning","icon":"file-check","tone":"orange","price_label":"₹1/-","price_paise":100,"sort_order":0,"is_default":true},
   {"title":"Expert Deed","summary":"Expert drafted partnership deed.","features":["Capital and profit clauses","Exit and dispute clauses","Delivered in 24-48 hours"],"highlight":"Best for serious business partnerships","icon":"headset","tone":"violet","price_label":"Starting From ₹2,999/-","price_paise":299900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Legal Notice', 'document-legal-notice', 'Draft a formal legal notice for disputes, recovery, or breach.', 'shield', 'slate', 1800, FALSE, 0, 11, 'personal-legal-documents', '[
+SELECT seed_document_service('Legal Notice', 'document-legal-notice', 'Draft a formal legal notice for disputes, recovery, or breach.', 'shield', 'slate', 1800, FALSE, 0, 16, 'personal-legal-documents', '[
   {"title":"Notice Review","summary":"Get your facts reviewed before notice drafting.","features":["Fact summary capture","Document upload checklist","Expert review starts"],"highlight":"Best before sending a formal notice","icon":"shield","tone":"blue","price_label":"Starting From ₹999/-","price_paise":99900,"sort_order":0,"is_default":true},
   {"title":"Notice Drafting","summary":"Full legal notice drafting by an expert.","features":["Professionally drafted notice","Legal grounds structured","One revision included"],"highlight":"Recommended for formal disputes","icon":"headset","tone":"violet","price_label":"Starting From ₹2,499/-","price_paise":249900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Affidavit', 'document-affidavit', 'Prepare an affidavit for declarations, corrections, and official use.', 'file-check', 'green', 540, FALSE, 0, 12, 'personal-legal-documents', '[
+SELECT seed_document_service('Affidavit', 'document-affidavit', 'Prepare an affidavit for declarations, corrections, and official use.', 'file-check', 'green', 540, FALSE, 0, 17, 'personal-legal-documents', '[
   {"title":"Basic Affidavit","summary":"Generate a simple affidavit format.","features":["Declaration details","Verified template","Download instantly"],"highlight":"Best for simple declarations","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Expert Affidavit","summary":"Expert-assisted affidavit drafting.","features":["Purpose-specific language","Execution guidance","Delivered in 24 hours"],"highlight":"Use when affidavit wording matters","icon":"headset","tone":"violet","price_label":"Starting From ₹699/-","price_paise":69900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Sale Agreement', 'document-sale-agreement', 'Agreement for selling goods, assets, or property interests.', 'home', 'orange', 430, FALSE, 0, 13, 'agreements', '[
+SELECT seed_document_service('Sale Agreement', 'document-sale-agreement', 'Agreement for selling goods, assets, or property interests.', 'home', 'orange', 430, FALSE, 0, 18, 'agreements', '[
   {"title":"Template Draft","summary":"Create a simple sale agreement.","features":["Buyer and seller details","Payment terms","Download draft instantly"],"highlight":"Good for straightforward sales","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Expert Draft","summary":"Expert drafted sale agreement.","features":["Risk clauses","Delivery and payment safeguards","Two revisions included"],"highlight":"Best for higher value transactions","icon":"headset","tone":"violet","price_label":"Starting From ₹1,999/-","price_paise":199900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Trademark Authorization', 'document-trademark-authorization', 'Authorize a representative for trademark filing and related actions.', 'shield', 'blue', 310, FALSE, 0, 14, 'business-documents', '[
+SELECT seed_document_service('Trademark Authorization', 'document-trademark-authorization', 'Authorize a representative for trademark filing and related actions.', 'shield', 'blue', 310, FALSE, 0, 19, 'business-documents', '[
   {"title":"Authorization Draft","summary":"Prepare a trademark authorization document.","features":["Applicant details","Representative authority","Download draft instantly"],"highlight":"Useful for trademark filing preparation","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"IP Expert Draft","summary":"Expert assisted trademark authorization.","features":["Filing-purpose review","Representative scope checked","Delivered in 24 hours"],"highlight":"Best when filing through a professional","icon":"headset","tone":"violet","price_label":"Starting From ₹899/-","price_paise":89900,"sort_order":1}
 ]'::jsonb);
 
-SELECT seed_document_service('Will Draft', 'document-will-draft', 'Prepare a will for distribution of assets and personal wishes.', 'file-check', 'pink', 460, FALSE, 0, 15, 'personal-legal-documents', '[
+SELECT seed_document_service('Will Draft', 'document-will-draft', 'Prepare a will for distribution of assets and personal wishes.', 'file-check', 'pink', 460, FALSE, 0, 20, 'personal-legal-documents', '[
   {"title":"Guided Will","summary":"Create a basic will draft.","features":["Beneficiary details","Asset list guidance","Download draft instantly"],"highlight":"For simple estate planning needs","icon":"file-check","tone":"green","price_label":"Free","price_paise":0,"sort_order":0,"is_default":true},
   {"title":"Expert Will Draft","summary":"Get a professionally reviewed will.","features":["Succession review","Witness and execution guidance","Two revisions included"],"highlight":"Recommended for family and asset complexity","icon":"headset","tone":"violet","price_label":"Starting From ₹2,499/-","price_paise":249900,"sort_order":1}
 ]'::jsonb);
