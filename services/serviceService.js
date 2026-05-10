@@ -18,6 +18,15 @@ const SERVICE_BENEFIT_CARD_ICONS = [
   "fa-solid fa-file-signature",
   "fa-solid fa-handshake-angle",
 ];
+const DOCUMENT_ICON_TONES = [
+  "orange",
+  "blue",
+  "pink",
+  "green",
+  "violet",
+  "slate",
+];
+const VARIANT_TONES = ["green", "violet", "blue", "orange", "pink"];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const PUBLIC_SITE_BASE_URL = normalizePublicSiteBaseUrl(
@@ -248,6 +257,11 @@ function normalizeIconClass(value, fallback) {
   return normalized || fallback;
 }
 
+function normalizeTone(value, allowed, fallback) {
+  const normalized = sanitizeKey(value);
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
 function normalizeBenefitCards(values) {
   if (!Array.isArray(values)) {
     return [];
@@ -368,6 +382,11 @@ function normalizeVariants(values) {
         id: normalizePositiveInteger(value?.id, `Variant ${title} id`, { fallback: null }),
         title,
         summary: normalizeNullableString(value?.summary),
+        features_json: normalizeStringList(value?.features_json ?? value?.features ?? [], `Variant ${title} features`),
+        highlight_text: normalizeNullableString(value?.highlight_text),
+        icon_key: normalizeNullableString(sanitizeKey(value?.icon_key)),
+        tone: normalizeTone(value?.tone, VARIANT_TONES, index === 0 ? "green" : "violet"),
+        price_label: normalizeNullableString(value?.price_label),
         price_paise: pricePaise,
         compare_at_price_paise: compareAtPricePaise,
         duration_text: normalizeNullableString(value?.duration_text),
@@ -579,6 +598,26 @@ function normalizeServicePayload(payload) {
     short_description: normalizeNullableString(payload?.short_description),
     featured_image_url: normalizeNullableString(payload?.featured_image_url),
     featured_image_alt: normalizeNullableString(payload?.featured_image_alt),
+    document_icon_url: normalizeNullableString(payload?.document_icon_url),
+    document_icon_key: normalizeNullableString(sanitizeKey(payload?.document_icon_key)),
+    document_icon_tone: normalizeTone(payload?.document_icon_tone, DOCUMENT_ICON_TONES, "orange"),
+    document_card_summary: normalizeNullableString(payload?.document_card_summary),
+    document_download_count: normalizePositiveInteger(
+      payload?.document_download_count,
+      "document_download_count",
+      { allowZero: true, fallback: 0 },
+    ),
+    is_package_featured: normalizeBooleanInput(payload?.is_package_featured, false),
+    package_sort_order: normalizePositiveInteger(
+      payload?.package_sort_order,
+      "package_sort_order",
+      { allowZero: true, fallback: 0 },
+    ),
+    document_sort_order: normalizePositiveInteger(
+      payload?.document_sort_order,
+      "document_sort_order",
+      { allowZero: true, fallback: 0 },
+    ),
     custom_content_title: normalizeNullableString(payload?.custom_content_title),
     custom_content_html: normalizeHtmlContent(payload?.custom_content_html),
     meta_title: normalizeNullableString(payload?.meta_title),
@@ -655,6 +694,22 @@ function serviceStartingPrice(variants) {
     .filter((price) => Number.isInteger(price) && price >= 0);
 
   return prices.length > 0 ? Math.min(...prices) : 0;
+}
+
+function getDocumentBadgeFromFlags({ hasFreeVariant, hasOneRupeeVariant, allVariantsPaid }) {
+  if (hasOneRupeeVariant) {
+    return "Offer";
+  }
+
+  if (allVariantsPaid) {
+    return "Premium";
+  }
+
+  if (hasFreeVariant) {
+    return "Free";
+  }
+
+  return null;
 }
 
 function normalizeImageUrl(value) {
@@ -861,13 +916,18 @@ async function syncServiceVariants(client, serviceId, variants) {
         `UPDATE service_variants
          SET title = $3,
              summary = $4,
-             price_paise = $5,
-             compare_at_price_paise = $6,
-             duration_text = $7,
-             turnaround_time_text = $8,
-             sort_order = $9,
-             is_default = $10,
-             is_active = $11,
+             features_json = $5::jsonb,
+             highlight_text = $6,
+             icon_key = $7,
+             tone = $8,
+             price_label = $9,
+             price_paise = $10,
+             compare_at_price_paise = $11,
+             duration_text = $12,
+             turnaround_time_text = $13,
+             sort_order = $14,
+             is_default = $15,
+             is_active = $16,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
            AND service_id = $2
@@ -877,6 +937,11 @@ async function syncServiceVariants(client, serviceId, variants) {
           serviceId,
           variant.title,
           variant.summary,
+          JSON.stringify(variant.features_json),
+          variant.highlight_text,
+          variant.icon_key,
+          variant.tone,
+          variant.price_label,
           variant.price_paise,
           variant.compare_at_price_paise,
           variant.duration_text,
@@ -895,6 +960,11 @@ async function syncServiceVariants(client, serviceId, variants) {
          service_id,
          title,
          summary,
+         features_json,
+         highlight_text,
+         icon_key,
+         tone,
+         price_label,
          price_paise,
          compare_at_price_paise,
          duration_text,
@@ -903,12 +973,17 @@ async function syncServiceVariants(client, serviceId, variants) {
          is_default,
          is_active
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         serviceId,
         variant.title,
         variant.summary,
+        JSON.stringify(variant.features_json),
+        variant.highlight_text,
+        variant.icon_key,
+        variant.tone,
+        variant.price_label,
         variant.price_paise,
         variant.compare_at_price_paise,
         variant.duration_text,
@@ -1010,6 +1085,11 @@ async function fetchServiceRelationships(serviceId) {
          id,
          title,
          summary,
+         features_json,
+         highlight_text,
+         icon_key,
+         tone,
+         price_label,
          price_paise,
          compare_at_price_paise,
          duration_text,
@@ -1075,6 +1155,11 @@ async function fetchServiceRelationships(serviceId) {
       id: Number(row.id),
       title: row.title,
       summary: row.summary,
+      features_json: Array.isArray(row.features_json) ? row.features_json : [],
+      highlight_text: row.highlight_text,
+      icon_key: row.icon_key,
+      tone: row.tone,
+      price_label: row.price_label,
       price_paise: Number(row.price_paise || 0),
       compare_at_price_paise: row.compare_at_price_paise === null ? null : Number(row.compare_at_price_paise),
       duration_text: row.duration_text,
@@ -1146,6 +1231,14 @@ async function serializeService(row, { publicOnly = false } = {}) {
     short_description: row.short_description,
     featured_image_url: row.featured_image_url,
     featured_image_alt: row.featured_image_alt,
+    document_icon_url: row.document_icon_url,
+    document_icon_key: row.document_icon_key,
+    document_icon_tone: row.document_icon_tone,
+    document_card_summary: row.document_card_summary,
+    document_download_count: Number(row.document_download_count || 0),
+    is_package_featured: Boolean(row.is_package_featured),
+    package_sort_order: Number(row.package_sort_order || 0),
+    document_sort_order: Number(row.document_sort_order || 0),
     custom_content_title: row.custom_content_title,
     custom_content_html: row.custom_content_html,
     meta_title: row.meta_title,
@@ -1273,6 +1366,14 @@ function serviceToMutablePayload(service) {
     short_description: service.short_description,
     featured_image_url: service.featured_image_url,
     featured_image_alt: service.featured_image_alt,
+    document_icon_url: service.document_icon_url,
+    document_icon_key: service.document_icon_key,
+    document_icon_tone: service.document_icon_tone,
+    document_card_summary: service.document_card_summary,
+    document_download_count: service.document_download_count,
+    is_package_featured: service.is_package_featured,
+    package_sort_order: service.package_sort_order,
+    document_sort_order: service.document_sort_order,
     custom_content_title: service.custom_content_title,
     custom_content_html: service.custom_content_html,
     meta_title: service.meta_title,
@@ -1309,6 +1410,11 @@ function serviceToMutablePayload(service) {
       id: variant.id,
       title: variant.title,
       summary: variant.summary,
+      features_json: variant.features_json,
+      highlight_text: variant.highlight_text,
+      icon_key: variant.icon_key,
+      tone: variant.tone,
+      price_label: variant.price_label,
       price_paise: variant.price_paise,
       compare_at_price_paise: variant.compare_at_price_paise,
       duration_text: variant.duration_text,
@@ -1526,6 +1632,31 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
     serviceId = Number(created.rows[0].id);
   }
 
+  await client.query(
+    `UPDATE services
+     SET document_icon_url = $2,
+         document_icon_key = $3,
+         document_icon_tone = $4,
+         document_card_summary = $5,
+         document_download_count = $6,
+         is_package_featured = $7,
+         package_sort_order = $8,
+         document_sort_order = $9,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1`,
+    [
+      serviceId,
+      payload.document_icon_url,
+      payload.document_icon_key,
+      payload.document_icon_tone,
+      payload.document_card_summary,
+      payload.document_download_count,
+      payload.is_package_featured,
+      payload.package_sort_order,
+      payload.document_sort_order,
+    ],
+  );
+
   await syncRelationshipTable(
     client,
     "service_term_relationships",
@@ -1719,6 +1850,21 @@ function buildReportFilters(filters = {}) {
     );
   }
 
+  const isPackageFeatured = normalizeBooleanInput(filters.is_package_featured, null);
+  if (isPackageFeatured !== null) {
+    values.push(isPackageFeatured);
+    conditions.push(`s.is_package_featured = $${values.length}`);
+  }
+
+  const missingDocumentIcon = normalizeBooleanInput(filters.missing_document_icon, null);
+  if (missingDocumentIcon !== null) {
+    conditions.push(
+      missingDocumentIcon
+        ? `COALESCE(BTRIM(s.document_icon_url), '') = '' AND COALESCE(BTRIM(s.document_icon_key), '') = ''`
+        : `(COALESCE(BTRIM(s.document_icon_url), '') <> '' OR COALESCE(BTRIM(s.document_icon_key), '') <> '')`,
+    );
+  }
+
   const missingMetaTitle = normalizeBooleanInput(filters.missing_meta_title, null);
   if (missingMetaTitle !== null) {
     conditions.push(
@@ -1815,6 +1961,14 @@ async function reportServices(filters = {}) {
        s.meta_title,
        s.meta_description,
        s.featured_image_url,
+       s.document_icon_url,
+       s.document_icon_key,
+       s.document_icon_tone,
+       s.document_card_summary,
+       s.document_download_count,
+       s.is_package_featured,
+       s.package_sort_order,
+       s.document_sort_order,
        s.is_indexable,
        s.published_at,
        s.created_at,
@@ -1885,6 +2039,14 @@ async function reportServices(filters = {}) {
       meta_title: row.meta_title,
       meta_description: row.meta_description,
       featured_image_url: row.featured_image_url,
+      document_icon_url: row.document_icon_url,
+      document_icon_key: row.document_icon_key,
+      document_icon_tone: row.document_icon_tone,
+      document_card_summary: row.document_card_summary,
+      document_download_count: Number(row.document_download_count || 0),
+      is_package_featured: Boolean(row.is_package_featured),
+      package_sort_order: Number(row.package_sort_order || 0),
+      document_sort_order: Number(row.document_sort_order || 0),
       is_indexable: Boolean(row.is_indexable),
       published_at: row.published_at,
       created_at: row.created_at,
@@ -2032,6 +2194,14 @@ async function listPublicServices(filters = {}) {
        s.meta_description,
        s.featured_image_url,
        s.featured_image_alt,
+       s.document_icon_url,
+       s.document_icon_key,
+       s.document_icon_tone,
+       s.document_card_summary,
+       s.document_download_count,
+       s.is_package_featured,
+       s.package_sort_order,
+       s.document_sort_order,
        s.published_at,
        s.primary_service_term_id,
        primary_taxonomy.slug AS primary_service_taxonomy_slug,
@@ -2112,12 +2282,51 @@ async function listPublicServices(filters = {}) {
          ),
          0
        ) AS starting_price_paise,
+       COALESCE(
+         (
+           SELECT COUNT(*)::int
+           FROM service_variants variant
+           WHERE variant.service_id = s.id
+             AND variant.is_active = TRUE
+         ),
+         0
+       ) AS active_variant_count,
+       COALESCE(
+         (
+           SELECT BOOL_OR(variant.price_paise = 0)
+           FROM service_variants variant
+           WHERE variant.service_id = s.id
+             AND variant.is_active = TRUE
+         ),
+         FALSE
+       ) AS has_free_variant,
+       COALESCE(
+         (
+           SELECT BOOL_OR(variant.price_paise = 100)
+           FROM service_variants variant
+           WHERE variant.service_id = s.id
+             AND variant.is_active = TRUE
+         ),
+         FALSE
+       ) AS has_one_rupee_variant,
+       COALESCE(
+         (
+           SELECT BOOL_AND(variant.price_paise > 0)
+           FROM service_variants variant
+           WHERE variant.service_id = s.id
+             AND variant.is_active = TRUE
+         ),
+         FALSE
+       ) AS all_variants_paid,
        COUNT(*) OVER()::int AS total_count
      FROM services s
      LEFT JOIN terms primary_term ON primary_term.id = s.primary_service_term_id
      LEFT JOIN taxonomy primary_taxonomy ON primary_taxonomy.id = primary_term.taxonomy_id
      WHERE ${conditions.join(" AND ")}
-     ORDER BY COALESCE(s.published_at, s.updated_at) DESC, s.id DESC
+     ORDER BY
+       CASE WHEN s.service_type = 'documents' THEN s.document_sort_order ELSE 0 END ASC,
+       COALESCE(s.published_at, s.updated_at) DESC,
+       s.id DESC
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values,
   );
@@ -2140,8 +2349,25 @@ async function listPublicServices(filters = {}) {
       meta_description: row.meta_description,
       featured_image_url: row.featured_image_url,
       featured_image_alt: row.featured_image_alt,
+      document_icon_url: row.document_icon_url,
+      document_icon_key: row.document_icon_key,
+      document_icon_tone: row.document_icon_tone,
+      document_card_summary: row.document_card_summary,
+      document_download_count: Number(row.document_download_count || 0),
+      is_package_featured: Boolean(row.is_package_featured),
+      package_sort_order: Number(row.package_sort_order || 0),
+      document_sort_order: Number(row.document_sort_order || 0),
       published_at: row.published_at,
       starting_price_paise: Number(row.starting_price_paise || 0),
+      active_variant_count: Number(row.active_variant_count || 0),
+      has_free_variant: Boolean(row.has_free_variant),
+      has_one_rupee_variant: Boolean(row.has_one_rupee_variant),
+      all_variants_paid: Boolean(row.all_variants_paid),
+      document_badge: getDocumentBadgeFromFlags({
+        hasFreeVariant: Boolean(row.has_free_variant),
+        hasOneRupeeVariant: Boolean(row.has_one_rupee_variant),
+        allVariantsPaid: Boolean(row.all_variants_paid),
+      }),
       primary_service_term:
         row.primary_service_term_id === null
           ? null

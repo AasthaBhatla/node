@@ -179,10 +179,6 @@ function normalizeCheckoutPayload(service, payload) {
     throw createValidationError("The selected service variant is not available");
   }
 
-  if (Number(variant.price_paise || 0) <= 0) {
-    throw createValidationError("This service variant cannot be checked out until pricing is configured");
-  }
-
   const cta = (service.ctas || []).find(
     (item) => item.cta_key === ctaKey && item.is_enabled,
   );
@@ -432,6 +428,7 @@ async function createServiceCheckout(userId, payload) {
   }
 
   const normalizedPayload = normalizeCheckoutPayload(service, payload);
+  const isFreeCheckout = Number(normalizedPayload.quoted_price_paise || 0) <= 0;
   const client = await pool.connect();
 
   try {
@@ -445,16 +442,19 @@ async function createServiceCheckout(userId, payload) {
          requested_action,
          status,
          payment_status,
-         quoted_price_paise
+         quoted_price_paise,
+         paid_at
        )
-       VALUES ($1, $2, $3, $4, 'submitted', 'pending', $5)
+       VALUES ($1, $2, $3, $4, 'submitted', $5, $6, $7)
        RETURNING id`,
       [
         serviceId,
         normalizedPayload.service_variant_id,
         userId,
         normalizedPayload.requested_action,
+        isFreeCheckout ? "paid" : "pending",
         normalizedPayload.quoted_price_paise,
+        isFreeCheckout ? new Date().toISOString() : null,
       ],
     );
 
@@ -514,14 +514,18 @@ async function createServiceCheckout(userId, payload) {
          credits_to_grant,
          payment_provider,
          order_mode,
-         order_note
+         order_note,
+         paid_at
        )
-       VALUES ($1, 'pending', $2, 0, 'razorpay', 'service', $3)
+       VALUES ($1, $2, $3, 0, $4, 'service', $5, $6)
        RETURNING *`,
       [
         userId,
+        isFreeCheckout ? "completed" : "pending",
         normalizedPayload.quoted_price_paise,
+        isFreeCheckout ? "free" : "razorpay",
         buildOrderNote(service, normalizedPayload.variant, normalizedPayload.requested_action),
+        isFreeCheckout ? new Date().toISOString() : null,
       ],
     );
 
@@ -536,6 +540,13 @@ async function createServiceCheckout(userId, payload) {
     );
 
     await client.query("COMMIT");
+
+    if (isFreeCheckout) {
+      return {
+        service_request: await getServiceRequestDetails(serviceRequestId, { userId }),
+        razorpay: null,
+      };
+    }
 
     const razorpayOrder = await razorpay.orders.create({
       amount: normalizedPayload.quoted_price_paise,

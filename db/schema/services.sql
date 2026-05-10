@@ -118,8 +118,26 @@ ALTER TABLE IF EXISTS services
 ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS benefit_cards JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+ALTER TABLE IF EXISTS services
+  ADD COLUMN IF NOT EXISTS document_icon_url TEXT,
+  ADD COLUMN IF NOT EXISTS document_icon_key TEXT,
+  ADD COLUMN IF NOT EXISTS document_icon_tone TEXT,
+  ADD COLUMN IF NOT EXISTS document_card_summary TEXT,
+  ADD COLUMN IF NOT EXISTS document_download_count INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS is_package_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS package_sort_order INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS document_sort_order INT NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_services_service_type
   ON services (service_type);
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_catalog
+  ON services (service_type, document_sort_order ASC, id DESC)
+  WHERE service_type = 'documents';
+
+CREATE INDEX IF NOT EXISTS idx_services_documents_packages
+  ON services (service_type, is_package_featured, package_sort_order ASC, id DESC)
+  WHERE service_type = 'documents';
 
 DO $$
 BEGIN
@@ -281,6 +299,11 @@ CREATE TABLE IF NOT EXISTS service_variants (
   service_id BIGINT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   summary TEXT,
+  features_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  highlight_text TEXT,
+  icon_key TEXT,
+  tone TEXT,
+  price_label TEXT,
   price_paise INT NOT NULL DEFAULT 0,
   compare_at_price_paise INT,
   duration_text TEXT,
@@ -295,6 +318,13 @@ CREATE TABLE IF NOT EXISTS service_variants (
   CONSTRAINT service_variants_compare_at_price_paise_check
     CHECK (compare_at_price_paise IS NULL OR compare_at_price_paise >= price_paise)
 );
+
+ALTER TABLE IF EXISTS service_variants
+  ADD COLUMN IF NOT EXISTS features_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS highlight_text TEXT,
+  ADD COLUMN IF NOT EXISTS icon_key TEXT,
+  ADD COLUMN IF NOT EXISTS tone TEXT,
+  ADD COLUMN IF NOT EXISTS price_label TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_service_variants_service
   ON service_variants (service_id, sort_order ASC, id ASC);
