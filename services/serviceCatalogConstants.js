@@ -9,6 +9,7 @@ const SERVICE_CTA_KEYS = [
 const SERVICE_TYPE_OPTIONS = [
   { value: "consultation", label: "Consultation" },
   { value: "managed_service", label: "Managed Service" },
+  { value: "documents", label: "Documents" },
 ];
 
 const SERVICE_TYPE_VALUES = SERVICE_TYPE_OPTIONS.map((option) => option.value);

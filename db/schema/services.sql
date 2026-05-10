@@ -5,7 +5,7 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'service_type') THEN
-    CREATE TYPE service_type AS ENUM ('consultation', 'managed_service');
+    CREATE TYPE service_type AS ENUM ('consultation', 'managed_service', 'documents');
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'service_cta_key') THEN
@@ -52,6 +52,8 @@ BEGIN
     );
   END IF;
 END $$;
+
+ALTER TYPE service_type ADD VALUE IF NOT EXISTS 'documents';
 
 CREATE TABLE IF NOT EXISTS services (
   id BIGSERIAL PRIMARY KEY,
