@@ -31,6 +31,7 @@ BEGIN
     ('company-documents', 'Company Documents'),
     ('identity-verification', 'Identity Verification'),
     ('employment-documents', 'Employment Documents'),
+    ('compliance-documents', 'Compliance Documents'),
     ('personal-legal-documents', 'Personal Legal Documents');
 
   UPDATE terms term
