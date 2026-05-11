@@ -169,7 +169,7 @@ function labelFromTemplateVariable(key) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function buildTemplateFormFields(templateHtml, configuredFields = [], fallbackFields = []) {
+function buildTemplateFormFields(templateHtml, configuredFields = []) {
   const variables = extractTemplateVariables(templateHtml);
   if (variables.length === 0) {
     return [];
@@ -181,19 +181,11 @@ function buildTemplateFormFields(templateHtml, configuredFields = [], fallbackFi
     fieldsByKey.set(field.field_key, field);
     fieldsByKey.set(sanitizeKey(field.field_key), field);
   }
-  const fallbackFieldsByKey = new Map();
-  for (const field of fallbackFields || []) {
-    if (!field?.field_key) continue;
-    fallbackFieldsByKey.set(field.field_key, field);
-    fallbackFieldsByKey.set(sanitizeKey(field.field_key), field);
-  }
 
   return variables.map((key, index) => {
     const configured =
       fieldsByKey.get(key) ||
-      fieldsByKey.get(sanitizeKey(key)) ||
-      fallbackFieldsByKey.get(key) ||
-      fallbackFieldsByKey.get(sanitizeKey(key));
+      fieldsByKey.get(sanitizeKey(key));
     if (configured) {
       return {
         ...configured,
@@ -1436,7 +1428,6 @@ async function serializeService(row, { publicOnly = false } = {}) {
   const templateFormFields = buildTemplateFormFields(
     row.document_template_html,
     relationships.document_template_fields,
-    relationships.form_fields,
   );
 
   const service = {

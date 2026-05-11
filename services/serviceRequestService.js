@@ -989,7 +989,6 @@ async function generateFreeDocument(userId, payload) {
     : buildTemplateFormFields(
         service.document_template_html,
         service.document_template_fields,
-        service.form_fields,
       );
 
   const ctaKey =

@@ -471,151 +471,42 @@ INSERT INTO service_document_template_fields (
 SELECT
   template_variables.service_id,
   template_variables.field_key,
-  COALESCE(
-    service_form_fields.label,
-    initcap(replace(replace(template_variables.field_key, '_', ' '), '-', ' '))
-  ) AS label,
-  CASE
-    WHEN service_form_fields.field_type = 'file' THEN 'text'::service_form_field_type
-    ELSE COALESCE(service_form_fields.field_type, 'text'::service_form_field_type)
-  END AS field_type,
-  service_form_fields.placeholder,
-  service_form_fields.help_text,
-  COALESCE(service_form_fields.options_json, '[]'::jsonb) AS options_json,
+  initcap(replace(replace(template_variables.field_key, '_', ' '), '-', ' ')) AS label,
+  'text'::service_form_field_type AS field_type,
+  'Enter ' || lower(replace(replace(template_variables.field_key, '_', ' '), '-', ' ')) AS placeholder,
+  NULL AS help_text,
+  '[]'::jsonb AS options_json,
   TRUE AS is_required,
   ROW_NUMBER() OVER (
     PARTITION BY template_variables.service_id
     ORDER BY template_variables.first_position ASC, template_variables.field_key ASC
   ) - 1 AS sort_order
 FROM template_variables
-LEFT JOIN service_form_fields
-  ON service_form_fields.service_id = template_variables.service_id
- AND service_form_fields.field_key = template_variables.field_key
 ON CONFLICT (service_id, field_key) DO NOTHING;
 
-DROP TABLE IF EXISTS legacy_document_template_matches;
-CREATE TEMP TABLE legacy_document_template_matches AS
-WITH legacy_document_map(service_slug, legacy_slug) AS (
-  VALUES
-    ('document-rent-agreement', 'rent'),
-    ('document-nda', 'nda'),
-    ('document-sale-agreement', 'property-sale-agreement'),
-    ('document-police-verification', 'tenant-police-verification'),
-    ('document-employment-agreement', 'employment-offer-letter'),
-    ('document-partnership-deed', 'business-partnership-agreement'),
-    ('document-service-agreement', 'vendor-service-agreement')
+WITH template_variables AS (
+  SELECT DISTINCT
+    service.id AS service_id,
+    trim((match_data.match)[1]) AS field_key
+  FROM services service
+  CROSS JOIN LATERAL regexp_matches(
+    COALESCE(service.document_template_html, ''),
+    '\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}',
+    'g'
+  ) AS match_data(match)
+  WHERE service.service_type = 'documents'
 )
-SELECT
-  service.id AS service_id,
-  service.slug AS service_slug,
-  legacy_post.id AS legacy_post_id,
-  legacy_post.slug AS legacy_slug,
-  document_body.value AS document_body,
-  COALESCE(service.document_template_html, '') AS current_document_template_html,
-  (
-    COALESCE(service.document_template_html, '') = ''
-    OR service.document_template_html LIKE '%{{document_purpose}}%'
-  ) AS should_replace_template
-FROM legacy_document_map
-JOIN services service
-  ON service.slug = legacy_document_map.service_slug
- AND service.service_type = 'documents'
-JOIN posts legacy_post
-  ON legacy_post.slug = legacy_document_map.legacy_slug
- AND legacy_post.post_type = 'list-of-documents'
-JOIN post_metadata document_body
-  ON document_body.post_id = legacy_post.id
- AND document_body.key = 'document_body'
-WHERE COALESCE(document_body.value, '') <> '';
-
-UPDATE services service
-SET document_template_html = legacy.document_body,
-    updated_at = CURRENT_TIMESTAMP
-FROM legacy_document_template_matches legacy
-WHERE service.id = legacy.service_id
-  AND legacy.should_replace_template = TRUE;
-
 DELETE FROM service_document_template_fields field
-USING legacy_document_template_matches legacy
-WHERE field.service_id = legacy.service_id
-  AND legacy.should_replace_template = TRUE
-  AND field.field_key IN ('client_name', 'phone_number', 'document_purpose');
-
-WITH legacy_document_fields AS (
-  SELECT
-    legacy.service_id,
-    field_post.id AS field_post_id,
-    field_post.slug AS field_slug,
-    field_post.title AS field_title,
-    field_ref.ordinality - 1 AS sort_order,
-    COALESCE(question_type.value, 'text') AS question_type,
-    COALESCE(question_options.value, '') AS question_options
-  FROM legacy_document_template_matches legacy
-  JOIN post_metadata fields_ids
-    ON fields_ids.post_id = legacy.legacy_post_id
-   AND fields_ids.key = 'fields_ids'
-  CROSS JOIN LATERAL unnest(fields_ids.value::text[]) WITH ORDINALITY AS field_ref(field_id_text, ordinality)
-  JOIN posts field_post
-    ON field_post.id = field_ref.field_id_text::int
-   AND field_post.post_type = 'fields'
-  LEFT JOIN post_metadata question_type
-    ON question_type.post_id = field_post.id
-   AND question_type.key = 'question_type'
-  LEFT JOIN post_metadata question_options
-    ON question_options.post_id = field_post.id
-   AND question_options.key = 'question_options'
-  WHERE legacy.should_replace_template = TRUE
-)
-INSERT INTO service_document_template_fields (
-  service_id,
-  field_key,
-  label,
-  field_type,
-  placeholder,
-  help_text,
-  options_json,
-  is_required,
-  sort_order
-)
-SELECT
-  service_id,
-  regexp_replace(lower(field_slug), '[^a-z0-9]+', '_', 'g') AS field_key,
-  field_title AS label,
-  CASE question_type
-    WHEN 'textarea' THEN 'textarea'::service_form_field_type
-    WHEN 'single_select' THEN 'radio'::service_form_field_type
-    WHEN 'multiselect' THEN 'checkbox'::service_form_field_type
-    WHEN 'number' THEN 'number'::service_form_field_type
-    WHEN 'date' THEN 'date'::service_form_field_type
-    WHEN 'email' THEN 'email'::service_form_field_type
-    WHEN 'phone' THEN 'phone'::service_form_field_type
-    ELSE 'text'::service_form_field_type
-  END AS field_type,
-  'Enter ' || lower(field_title) AS placeholder,
-  NULL AS help_text,
-  CASE
-    WHEN question_type IN ('single_select', 'multiselect') THEN
-      to_jsonb(
-        ARRAY(
-          SELECT option_text
-          FROM unnest(regexp_split_to_array(replace(question_options, E'\r', ''), E'\n')) AS option_text
-          WHERE trim(option_text) <> ''
-        )
-      )
-    ELSE '[]'::jsonb
-  END AS options_json,
-  TRUE AS is_required,
-  sort_order
-FROM legacy_document_fields
-ON CONFLICT (service_id, field_key) DO UPDATE
-SET label = EXCLUDED.label,
-    field_type = EXCLUDED.field_type,
-    placeholder = EXCLUDED.placeholder,
-    help_text = EXCLUDED.help_text,
-    options_json = EXCLUDED.options_json,
-    is_required = EXCLUDED.is_required,
-    sort_order = EXCLUDED.sort_order,
-    updated_at = CURRENT_TIMESTAMP;
+USING services service
+WHERE service.id = field.service_id
+  AND service.service_type = 'documents'
+  AND field.field_key IN ('client_name', 'phone_number', 'document_purpose')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM template_variables
+    WHERE template_variables.service_id = field.service_id
+      AND template_variables.field_key = field.field_key
+  );
 
 CREATE TABLE IF NOT EXISTS service_requests (
   id BIGSERIAL PRIMARY KEY,
