@@ -7,7 +7,10 @@ const {
   SERVICE_CTA_KEYS,
   SERVICE_FORM_FIELD_TYPES,
 } = require("./serviceCatalogConstants");
-const { getServiceById } = require("./serviceService");
+const {
+  buildTemplateFormFields,
+  getServiceById,
+} = require("./serviceService");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -128,7 +131,7 @@ function buildTemplateContext(service, requestDetails, payload) {
 
 function renderTemplateHtml(templateHtml, context) {
   return normalizeString(templateHtml).replace(
-    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g,
     (_match, key) => normalizeString(context[key]),
   );
 }
@@ -585,14 +588,17 @@ async function getServiceRequestDetails(id, options = {}) {
   };
 }
 
-async function createServiceCheckout(userId, payload) {
+async function createServiceCheckout(userId, payload, options = {}) {
   const serviceId = normalizePositiveInteger(payload?.service_id, "service_id");
   const service = await getServiceById(serviceId);
   if (!service || service.status !== "published") {
     throw createValidationError("The selected service is not available");
   }
 
-  const normalizedPayload = normalizeCheckoutPayload(service, payload);
+  const checkoutService = Array.isArray(options.formFieldsOverride)
+    ? { ...service, form_fields: options.formFieldsOverride }
+    : service;
+  const normalizedPayload = normalizeCheckoutPayload(checkoutService, payload);
   const isFreeCheckout = Number(normalizedPayload.quoted_price_paise || 0) <= 0;
   const client = await pool.connect();
 
@@ -970,6 +976,11 @@ async function generateFreeDocument(userId, payload) {
     throw createValidationError("This document does not have a generation template configured");
   }
 
+  const templateFields = buildTemplateFormFields(
+    service.document_template_html,
+    service.form_fields,
+  );
+
   const ctaKey =
     normalizeString(payload?.cta_key).toLowerCase() ||
     (service.ctas || []).find((cta) => cta.is_enabled)?.cta_key ||
@@ -981,6 +992,8 @@ async function generateFreeDocument(userId, payload) {
     cta_key: ctaKey,
     answers: Array.isArray(payload?.answers) ? payload.answers : [],
     files: Array.isArray(payload?.files) ? payload.files : [],
+  }, {
+    formFieldsOverride: templateFields,
   });
 
   const requestDetails = checkout.service_request;

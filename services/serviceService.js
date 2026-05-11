@@ -69,6 +69,12 @@ const SERVICES_PUBLIC_PATH_PREFIX = normalizePublicPathPrefix(
 const PUBLIC_ORGANIZATION_NAME = normalizeString(
   process.env.PUBLIC_ORGANIZATION_NAME || "Kaptaan",
 );
+const TEMPLATE_SYSTEM_VARIABLES = new Set([
+  "service_title",
+  "variant_title",
+  "profile_title",
+  "today",
+]);
 
 function createValidationError(message, details) {
   const error = new Error(message);
@@ -132,6 +138,70 @@ function sanitizeKey(value, fallback = "") {
     .replace(/^_+|_+$/g, "");
 
   return normalized || fallback;
+}
+
+function extractTemplateVariables(templateHtml) {
+  const variables = [];
+  const seen = new Set();
+  const template = normalizeString(templateHtml);
+  const pattern = /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g;
+  let match;
+
+  while ((match = pattern.exec(template)) !== null) {
+    const key = normalizeString(match[1]);
+    if (!key || TEMPLATE_SYSTEM_VARIABLES.has(key) || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    variables.push(key);
+  }
+
+  return variables;
+}
+
+function labelFromTemplateVariable(key) {
+  return normalizeString(key)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildTemplateFormFields(templateHtml, configuredFields = []) {
+  const variables = extractTemplateVariables(templateHtml);
+  if (variables.length === 0) {
+    return [];
+  }
+
+  const fieldsByKey = new Map();
+  for (const field of configuredFields || []) {
+    if (!field?.field_key) continue;
+    fieldsByKey.set(field.field_key, field);
+    fieldsByKey.set(sanitizeKey(field.field_key), field);
+  }
+
+  return variables.map((key, index) => {
+    const configured = fieldsByKey.get(key) || fieldsByKey.get(sanitizeKey(key));
+    if (configured) {
+      return {
+        ...configured,
+        field_key: key,
+        sort_order: index,
+      };
+    }
+
+    return {
+      id: -(index + 1),
+      field_key: key,
+      label: labelFromTemplateVariable(key),
+      field_type: "text",
+      placeholder: `Enter ${labelFromTemplateVariable(key).toLowerCase()}`,
+      help_text: null,
+      options_json: [],
+      sort_order: index,
+      created_at: null,
+      updated_at: null,
+    };
+  });
 }
 
 function normalizeBooleanInput(value, fallback = null) {
@@ -1282,6 +1352,10 @@ async function serializeService(row, { publicOnly = false } = {}) {
   const ctas = publicOnly
     ? relationships.ctas.filter((cta) => cta.is_enabled)
     : relationships.ctas;
+  const templateFormFields = buildTemplateFormFields(
+    row.document_template_html,
+    relationships.form_fields,
+  );
 
   const service = {
     id: Number(row.id),
@@ -1362,6 +1436,7 @@ async function serializeService(row, { publicOnly = false } = {}) {
     testimonials: relationships.testimonials,
     ctas,
     form_fields: relationships.form_fields,
+    template_form_fields: templateFormFields,
     published_at: row.published_at,
     author_id: row.author_id === null ? null : Number(row.author_id),
     created_at: row.created_at,
@@ -2727,6 +2802,7 @@ module.exports = {
   SERVICE_TYPE_OPTIONS,
   SERVICE_TYPE_VALUES,
   SERVICE_TRUST_BADGE_KEYS,
+  buildTemplateFormFields,
   createService,
   deleteService,
   getPublicServiceBySlug,
