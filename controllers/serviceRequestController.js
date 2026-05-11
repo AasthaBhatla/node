@@ -1,5 +1,6 @@
 const {
   createServiceCheckout,
+  generateFreeDocument,
   getServiceRequestByIdForAdmin,
   getServiceRequestByIdForUser,
   listServiceRequestsForUser,
@@ -29,6 +30,19 @@ exports.checkout = async (req, res) => {
     return res.status(201).json(result);
   } catch (error) {
     return handleError(res, error, "Create Service Checkout Error:");
+  }
+};
+
+exports.generateFreeDocument = async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const result = await generateFreeDocument(Number(req.user.id), req.body || {});
+    return res.status(201).json(result);
+  } catch (error) {
+    return handleError(res, error, "Generate Free Document Error:");
   }
 };
 

@@ -130,6 +130,7 @@ ALTER TABLE IF EXISTS services
   ADD COLUMN IF NOT EXISTS document_filter_category TEXT,
   ADD COLUMN IF NOT EXISTS document_filter_purpose TEXT,
   ADD COLUMN IF NOT EXISTS document_filter_people TEXT,
+  ADD COLUMN IF NOT EXISTS document_template_html TEXT,
   ADD COLUMN IF NOT EXISTS document_filter_execution_flags JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_services_service_type

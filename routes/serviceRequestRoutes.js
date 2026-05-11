@@ -7,6 +7,7 @@ const serviceRequestController = require("../controllers/serviceRequestControlle
 const router = express.Router();
 
 router.post("/checkout", authMiddleware, serviceRequestController.checkout);
+router.post("/generate-document", authMiddleware, serviceRequestController.generateFreeDocument);
 router.get("/me", authMiddleware, serviceRequestController.listMine);
 router.get("/me/:id", authMiddleware, serviceRequestController.getMineById);
 
