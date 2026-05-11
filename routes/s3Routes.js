@@ -54,12 +54,22 @@ const EXT_MAP = {
   "audio/x-ms-wma": "wma",
   "audio/x-aiff": "aiff",
   "audio/3gpp": "3gp",
+
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "video/ogg": "ogv",
+  "video/x-msvideo": "avi",
+  "video/x-matroska": "mkv",
 };
 
-const MIME_BY_EXTENSION = Object.entries(EXT_MAP).reduce((record, [mime, ext]) => {
-  record[ext] = mime;
-  return record;
-}, {});
+const MIME_BY_EXTENSION = Object.entries(EXT_MAP).reduce(
+  (record, [mime, ext]) => {
+    record[ext] = mime;
+    return record;
+  },
+  {},
+);
 
 function sanitizeExtension(value) {
   return String(value || "")
@@ -69,11 +79,17 @@ function sanitizeExtension(value) {
 }
 
 function extensionFromFilename(filename) {
-  return sanitizeExtension(String(filename || "").split(".").pop() || "");
+  return sanitizeExtension(
+    String(filename || "")
+      .split(".")
+      .pop() || "",
+  );
 }
 
 function resolveUploadKind(contentType, filename) {
-  const safeType = String(contentType || "").trim().toLowerCase();
+  const safeType = String(contentType || "")
+    .trim()
+    .toLowerCase();
   const safeFilenameExt = extensionFromFilename(filename);
 
   if (EXT_MAP[safeType]) {
