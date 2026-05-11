@@ -23,6 +23,7 @@ docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/order.sql
 # docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/ngo_help_requests.sql
 # docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/appointments.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/services.sql
+docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/zz_profile_documents.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/blogs.sql
 docker exec -i postgres-db psql -U mridul -d kaptaanAPI < db/schema/expert_connect.sql
 
