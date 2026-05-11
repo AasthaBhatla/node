@@ -438,12 +438,23 @@ CREATE INDEX IF NOT EXISTS idx_service_document_template_fields_service
 WITH template_variables AS (
   SELECT
     service_id,
-    field_key,
+    normalized_field_key AS field_key,
     MIN(variable_position) AS first_position
   FROM (
     SELECT
       service.id AS service_id,
       trim((match_data.match)[1]) AS field_key,
+      regexp_replace(
+        regexp_replace(
+          regexp_replace(lower(trim((match_data.match)[1])), '[^a-z0-9_]+', '_', 'g'),
+          '_+',
+          '_',
+          'g'
+        ),
+        '^_+|_+$',
+        '',
+        'g'
+      ) AS normalized_field_key,
       match_data.ordinality AS variable_position
     FROM services service
     CROSS JOIN LATERAL regexp_matches(
@@ -455,7 +466,7 @@ WITH template_variables AS (
   ) raw_variables
   WHERE field_key <> ''
     AND field_key NOT IN ('service_title', 'variant_title', 'profile_title', 'today')
-  GROUP BY service_id, field_key
+  GROUP BY service_id, normalized_field_key
 )
 INSERT INTO service_document_template_fields (
   service_id,
@@ -487,7 +498,17 @@ ON CONFLICT (service_id, field_key) DO NOTHING;
 WITH template_variables AS (
   SELECT DISTINCT
     service.id AS service_id,
-    trim((match_data.match)[1]) AS field_key
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(lower(trim((match_data.match)[1])), '[^a-z0-9_]+', '_', 'g'),
+        '_+',
+        '_',
+        'g'
+      ),
+      '^_+|_+$',
+      '',
+      'g'
+    ) AS field_key
   FROM services service
   CROSS JOIN LATERAL regexp_matches(
     COALESCE(service.document_template_html, ''),
@@ -507,6 +528,60 @@ WHERE service.id = field.service_id
     WHERE template_variables.service_id = field.service_id
       AND template_variables.field_key = field.field_key
   );
+
+WITH normalized_fields AS (
+  SELECT
+    field.id,
+    field.service_id,
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(lower(field.field_key), '[^a-z0-9_]+', '_', 'g'),
+        '_+',
+        '_',
+        'g'
+      ),
+      '^_+|_+$',
+      '',
+      'g'
+    ) AS normalized_field_key
+  FROM service_document_template_fields field
+)
+UPDATE service_document_template_fields field
+SET field_key = normalized_fields.normalized_field_key,
+    updated_at = CURRENT_TIMESTAMP
+FROM normalized_fields
+WHERE field.id = normalized_fields.id
+  AND field.field_key <> normalized_fields.normalized_field_key
+  AND NOT EXISTS (
+    SELECT 1
+    FROM service_document_template_fields existing
+    WHERE existing.service_id = normalized_fields.service_id
+      AND existing.field_key = normalized_fields.normalized_field_key
+  );
+
+WITH normalized_fields AS (
+  SELECT
+    field.id,
+    field.service_id,
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(lower(field.field_key), '[^a-z0-9_]+', '_', 'g'),
+        '_+',
+        '_',
+        'g'
+      ),
+      '^_+|_+$',
+      '',
+      'g'
+    ) AS normalized_field_key
+  FROM service_document_template_fields field
+)
+DELETE FROM service_document_template_fields field
+USING normalized_fields, service_document_template_fields keeper
+WHERE field.id = normalized_fields.id
+  AND field.field_key <> normalized_fields.normalized_field_key
+  AND keeper.service_id = normalized_fields.service_id
+  AND keeper.field_key = normalized_fields.normalized_field_key;
 
 CREATE TABLE IF NOT EXISTS service_requests (
   id BIGSERIAL PRIMARY KEY,
