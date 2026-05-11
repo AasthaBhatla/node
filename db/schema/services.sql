@@ -494,7 +494,7 @@ LEFT JOIN service_form_fields
 ON CONFLICT (service_id, field_key) DO NOTHING;
 
 DROP TABLE IF EXISTS legacy_document_template_matches;
-CREATE TEMP TABLE legacy_document_template_matches ON COMMIT DROP AS
+CREATE TEMP TABLE legacy_document_template_matches AS
 WITH legacy_document_map(service_slug, legacy_slug) AS (
   VALUES
     ('document-rent-agreement', 'rent'),
