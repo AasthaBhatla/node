@@ -63,8 +63,10 @@ const adminWalletRoutes = require("./routes/adminWalletRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
 const adminFinanceRoutes = require("./routes/adminFinanceRoutes");
 const adminConfigRoutes = require("./routes/adminConfigRoutes");
+const adminDocumentRoutes = require("./routes/adminDocumentRoutes");
 const serviceRoutes = require("./routes/serviceRoutes");
 const serviceRequestRoutes = require("./routes/serviceRequestRoutes");
+const profileDocumentRoutes = require("./routes/profileDocumentRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 
 app.use("/sessions", sessionRoutes);
@@ -98,10 +100,12 @@ app.use("/admin/wallet", adminWalletRoutes);
 app.use("/admin/dashboard", adminDashboardRoutes);
 app.use("/admin/finance", adminFinanceRoutes);
 app.use("/admin/config", adminConfigRoutes);
+app.use("/admin/documents", adminDocumentRoutes);
 app.use("/expert-connect", expertConnectRoutes);
 app.use("/internal/notifications", internalNotifications);
 app.use("/services", serviceRoutes);
 app.use("/service-requests", serviceRequestRoutes);
+app.use("/profile-documents", profileDocumentRoutes);
 app.use("/blogs", blogRoutes);
 
 app.get("/", (req, res) => {

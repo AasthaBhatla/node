@@ -11,6 +11,12 @@ const {
   buildTemplateFormFields,
   getServiceById,
 } = require("./serviceService");
+const {
+  addGeneratedVersionForServiceRequest,
+  createForServiceRequestTx,
+  updateDocumentStatusForServiceRequest,
+  validateWorkspaceForUser,
+} = require("./profileDocumentService");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -450,6 +456,18 @@ function buildOrderNote(service, variant, ctaKey) {
   return `${service.title} | ${variant.title} | ${ctaKey}`;
 }
 
+function getDocumentWorkspaceId(service, payload) {
+  if (service.service_type !== "documents") {
+    return null;
+  }
+
+  const workspaceId = normalizePositiveInteger(
+    payload?.workspace_id ?? payload?.workspaceId ?? payload?.profile_id ?? payload?.profileId,
+    "workspace_id",
+  );
+  return workspaceId;
+}
+
 function buildClientSummary(row) {
   const firstName = normalizeString(row.client_first_name);
   const lastName = normalizeString(row.client_last_name);
@@ -547,6 +565,7 @@ async function getServiceRequestDetails(id, options = {}) {
     payment_status: row.payment_status,
     quoted_price_paise: Number(row.quoted_price_paise || 0),
     order_id: row.order_id === null ? null : Number(row.order_id),
+    workspace_id: row.workspace_id === null ? null : Number(row.workspace_id),
     submitted_at: row.submitted_at,
     paid_at: row.paid_at || row.order_paid_at,
     created_at: row.created_at,
@@ -607,29 +626,36 @@ async function createServiceCheckout(userId, payload, options = {}) {
     ? { ...service, form_fields: options.formFieldsOverride }
     : service;
   const normalizedPayload = normalizeCheckoutPayload(checkoutService, payload);
+  const documentWorkspaceId = getDocumentWorkspaceId(service, payload);
   const isFreeCheckout = Number(normalizedPayload.quoted_price_paise || 0) <= 0;
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
+    if (documentWorkspaceId) {
+      await validateWorkspaceForUser(documentWorkspaceId, userId, client);
+    }
+
     const serviceRequestResult = await client.query(
       `INSERT INTO service_requests (
          service_id,
          service_variant_id,
          user_id,
+         workspace_id,
          requested_action,
          status,
          payment_status,
          quoted_price_paise,
          paid_at
        )
-       VALUES ($1, $2, $3, $4, 'submitted', $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, 'submitted', $6, $7, $8)
        RETURNING id`,
       [
         serviceId,
         normalizedPayload.service_variant_id,
         userId,
+        documentWorkspaceId,
         normalizedPayload.requested_action,
         isFreeCheckout ? "paid" : "pending",
         normalizedPayload.quoted_price_paise,
@@ -638,6 +664,16 @@ async function createServiceCheckout(userId, payload, options = {}) {
     );
 
     const serviceRequestId = Number(serviceRequestResult.rows[0].id);
+
+    if (documentWorkspaceId && service.service_type === "documents") {
+      await createForServiceRequestTx(client, {
+        userId,
+        workspaceId: documentWorkspaceId,
+        service,
+        serviceRequestId,
+        actorUserId: userId,
+      });
+    }
 
     for (const answer of normalizedPayload.normalized_answers) {
       await client.query(
@@ -887,6 +923,7 @@ async function reportServiceRequests(filters = {}) {
        sr.status,
        sr.payment_status,
        sr.quoted_price_paise,
+       sr.workspace_id,
        sr.order_id,
        sr.submitted_at,
        sr.paid_at,
@@ -934,6 +971,7 @@ async function reportServiceRequests(filters = {}) {
       payment_status: row.payment_status,
       quoted_price_paise: Number(row.quoted_price_paise || 0),
       order_id: row.order_id === null ? null : Number(row.order_id),
+      workspace_id: row.workspace_id === null ? null : Number(row.workspace_id),
       submitted_at: row.submitted_at,
       paid_at: row.paid_at,
       updated_at: row.updated_at,
@@ -949,7 +987,7 @@ async function getServiceRequestByIdForAdmin(id) {
   return getServiceRequestDetails(id, { admin: true });
 }
 
-async function updateServiceRequestStatus(id, nextStatus) {
+async function updateServiceRequestStatus(id, nextStatus, actorUserId = null) {
   const status = normalizeRequestStatus(nextStatus);
   const result = await pool.query(
     `UPDATE service_requests
@@ -963,6 +1001,8 @@ async function updateServiceRequestStatus(id, nextStatus) {
   if (!result.rows[0]) {
     return null;
   }
+
+  await updateDocumentStatusForServiceRequest(id, status, actorUserId);
 
   return getServiceRequestByIdForAdmin(id);
 }
@@ -1000,6 +1040,7 @@ async function generateFreeDocument(userId, payload) {
     service_id: serviceId,
     service_variant_id: variantId,
     cta_key: ctaKey,
+    workspace_id: payload?.workspace_id ?? payload?.workspaceId ?? payload?.profile_id ?? payload?.profileId,
     answers: Array.isArray(payload?.answers) ? payload.answers : [],
     files: Array.isArray(payload?.files) ? payload.files : [],
   }, {
@@ -1038,17 +1079,25 @@ async function generateFreeDocument(userId, payload) {
     [serviceId],
   );
 
+  const generatedDocument = {
+    document_url: upload.public_url,
+    key: upload.key,
+    file_name: filename,
+    content_type: "application/pdf",
+    document_type: "pdf",
+    document_size: pdfBuffer.length,
+    uploaded_at: new Date().toISOString(),
+  };
+
+  await addGeneratedVersionForServiceRequest(
+    requestDetails.id,
+    generatedDocument,
+    userId,
+  );
+
   return {
     service_request: await getServiceRequestDetails(requestDetails.id, { userId }),
-    generated_document: {
-      document_url: upload.public_url,
-      key: upload.key,
-      file_name: filename,
-      content_type: "application/pdf",
-      document_type: "pdf",
-      document_size: pdfBuffer.length,
-      uploaded_at: new Date().toISOString(),
-    },
+    generated_document: generatedDocument,
   };
 }
 

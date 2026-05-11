@@ -106,6 +106,7 @@ exports.updateStatus = async (req, res) => {
     const request = await updateServiceRequestStatus(
       Number(req.params.id),
       req.body?.status,
+      req.user?.id ? Number(req.user.id) : null,
     );
     if (!request) {
       return res.status(404).json({ error: "Service request not found" });
