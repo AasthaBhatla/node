@@ -406,17 +406,25 @@ function normalizeCheckoutPayload(service, payload) {
 
     const answer = answersByKey.get(field.field_key);
     if (!answer) {
-      if (allowDeferredIntake) {
+      if (allowDeferredIntake || field.is_required === false) {
         continue;
       }
       throw createValidationError(`${field.label} is required`);
     }
 
-    const normalizedValue = normalizeAnswerValue(
-      field.field_type,
-      answer.value ?? answer.value_text ?? answer.value_json,
-      Array.isArray(field.options_json) ? field.options_json : [],
-    );
+    let normalizedValue;
+    try {
+      normalizedValue = normalizeAnswerValue(
+        field.field_type,
+        answer.value ?? answer.value_text ?? answer.value_json,
+        Array.isArray(field.options_json) ? field.options_json : [],
+      );
+    } catch (error) {
+      if (field.is_required === false && error?.statusCode === 422) {
+        continue;
+      }
+      throw error;
+    }
 
     normalizedAnswers.push({
       field_key: field.field_key,
@@ -976,10 +984,13 @@ async function generateFreeDocument(userId, payload) {
     throw createValidationError("This document does not have a generation template configured");
   }
 
-  const templateFields = buildTemplateFormFields(
-    service.document_template_html,
-    service.form_fields,
-  );
+  const templateFields = Array.isArray(service.template_form_fields)
+    ? service.template_form_fields
+    : buildTemplateFormFields(
+        service.document_template_html,
+        service.document_template_fields,
+        service.form_fields,
+      );
 
   const ctaKey =
     normalizeString(payload?.cta_key).toLowerCase() ||

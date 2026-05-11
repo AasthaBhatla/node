@@ -75,6 +75,9 @@ const TEMPLATE_SYSTEM_VARIABLES = new Set([
   "profile_title",
   "today",
 ]);
+const DOCUMENT_TEMPLATE_FIELD_TYPES = SERVICE_FORM_FIELD_TYPES.filter(
+  (fieldType) => fieldType !== "file",
+);
 
 function createValidationError(message, details) {
   const error = new Error(message);
@@ -166,7 +169,7 @@ function labelFromTemplateVariable(key) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function buildTemplateFormFields(templateHtml, configuredFields = []) {
+function buildTemplateFormFields(templateHtml, configuredFields = [], fallbackFields = []) {
   const variables = extractTemplateVariables(templateHtml);
   if (variables.length === 0) {
     return [];
@@ -178,13 +181,24 @@ function buildTemplateFormFields(templateHtml, configuredFields = []) {
     fieldsByKey.set(field.field_key, field);
     fieldsByKey.set(sanitizeKey(field.field_key), field);
   }
+  const fallbackFieldsByKey = new Map();
+  for (const field of fallbackFields || []) {
+    if (!field?.field_key) continue;
+    fallbackFieldsByKey.set(field.field_key, field);
+    fallbackFieldsByKey.set(sanitizeKey(field.field_key), field);
+  }
 
   return variables.map((key, index) => {
-    const configured = fieldsByKey.get(key) || fieldsByKey.get(sanitizeKey(key));
+    const configured =
+      fieldsByKey.get(key) ||
+      fieldsByKey.get(sanitizeKey(key)) ||
+      fallbackFieldsByKey.get(key) ||
+      fallbackFieldsByKey.get(sanitizeKey(key));
     if (configured) {
       return {
         ...configured,
         field_key: key,
+        is_required: configured.is_required !== false,
         sort_order: index,
       };
     }
@@ -197,6 +211,7 @@ function buildTemplateFormFields(templateHtml, configuredFields = []) {
       placeholder: `Enter ${labelFromTemplateVariable(key).toLowerCase()}`,
       help_text: null,
       options_json: [],
+      is_required: true,
       sort_order: index,
       created_at: null,
       updated_at: null,
@@ -684,11 +699,54 @@ function normalizeFormFields(values) {
       };
     });
 
-  if (normalized.length === 0) {
-    throw createValidationError("At least one intake form field is required");
+  return normalized;
+}
+
+function normalizeDocumentTemplateFields(values) {
+  if (!Array.isArray(values)) {
+    return [];
   }
 
-  return normalized;
+  const seen = new Set();
+  return values
+    .map((value, index) => {
+      const rawKey = normalizeString(value?.field_key ?? value?.fieldKey);
+      const fieldKey = sanitizeKey(rawKey);
+      if (!fieldKey || TEMPLATE_SYSTEM_VARIABLES.has(fieldKey)) {
+        return null;
+      }
+      if (seen.has(fieldKey)) {
+        throw createValidationError(`Document template field key ${fieldKey} was provided more than once`);
+      }
+      seen.add(fieldKey);
+
+      const label = normalizeString(value?.label) || labelFromTemplateVariable(fieldKey);
+      const fieldType = normalizeString(value?.field_type ?? value?.fieldType ?? "text").toLowerCase();
+      if (!DOCUMENT_TEMPLATE_FIELD_TYPES.includes(fieldType)) {
+        throw createValidationError(`Unsupported document template field type: ${fieldType}`);
+      }
+
+      const optionsJson = normalizeFieldOptions(value?.options_json ?? value?.options ?? []);
+      if (["select", "radio", "checkbox"].includes(fieldType) && optionsJson.length === 0) {
+        throw createValidationError(`Document template field ${label} requires at least one option`);
+      }
+
+      return {
+        field_key: fieldKey,
+        label,
+        field_type: fieldType,
+        placeholder: normalizeNullableString(value?.placeholder),
+        help_text: normalizeNullableString(value?.help_text ?? value?.helpText),
+        options_json: optionsJson,
+        is_required: normalizeBooleanInput(value?.is_required ?? value?.isRequired, true),
+        sort_order: normalizePositiveInteger(
+          value?.sort_order ?? value?.sortOrder,
+          `Document template field ${label} sort_order`,
+          { allowZero: true, fallback: index },
+        ),
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeServicePayload(payload) {
@@ -720,6 +778,7 @@ function normalizeServicePayload(payload) {
   const variants = normalizeVariants(payload?.variants);
   const ctas = normalizeCtas(payload?.ctas);
   const formFields = normalizeFormFields(payload?.form_fields);
+  const documentTemplateFields = normalizeDocumentTemplateFields(payload?.document_template_fields);
 
   return {
     status,
@@ -797,6 +856,7 @@ function normalizeServicePayload(payload) {
     testimonials: normalizeTestimonials(payload?.testimonials),
     ctas,
     form_fields: formFields,
+    document_template_fields: documentTemplateFields,
     published_at: publishedAt,
   };
 }
@@ -1187,6 +1247,7 @@ async function fetchServiceRelationships(serviceId) {
     testimonialsResult,
     ctasResult,
     formFieldsResult,
+    documentTemplateFieldsResult,
   ] = await Promise.all([
     pool.query(
       `SELECT term.id, term.taxonomy_id, term.slug, term.title
@@ -1260,6 +1321,13 @@ async function fetchServiceRelationships(serviceId) {
     pool.query(
       `SELECT id, field_key, label, field_type, placeholder, help_text, options_json, sort_order, created_at, updated_at
        FROM service_form_fields
+       WHERE service_id = $1
+       ORDER BY sort_order ASC, id ASC`,
+      [serviceId],
+    ),
+    pool.query(
+      `SELECT id, field_key, label, field_type, placeholder, help_text, options_json, is_required, sort_order, created_at, updated_at
+       FROM service_document_template_fields
        WHERE service_id = $1
        ORDER BY sort_order ASC, id ASC`,
       [serviceId],
@@ -1341,6 +1409,19 @@ async function fetchServiceRelationships(serviceId) {
       created_at: row.created_at,
       updated_at: row.updated_at,
     })),
+    document_template_fields: documentTemplateFieldsResult.rows.map((row) => ({
+      id: Number(row.id),
+      field_key: row.field_key,
+      label: row.label,
+      field_type: row.field_type,
+      placeholder: row.placeholder,
+      help_text: row.help_text,
+      options_json: Array.isArray(row.options_json) ? row.options_json : [],
+      is_required: Boolean(row.is_required),
+      sort_order: Number(row.sort_order || 0),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    })),
   };
 }
 
@@ -1354,6 +1435,7 @@ async function serializeService(row, { publicOnly = false } = {}) {
     : relationships.ctas;
   const templateFormFields = buildTemplateFormFields(
     row.document_template_html,
+    relationships.document_template_fields,
     relationships.form_fields,
   );
 
@@ -1436,6 +1518,7 @@ async function serializeService(row, { publicOnly = false } = {}) {
     testimonials: relationships.testimonials,
     ctas,
     form_fields: relationships.form_fields,
+    document_template_fields: relationships.document_template_fields,
     template_form_fields: templateFormFields,
     published_at: row.published_at,
     author_id: row.author_id === null ? null : Number(row.author_id),
@@ -1593,6 +1676,16 @@ function serviceToMutablePayload(service) {
       placeholder: field.placeholder,
       help_text: field.help_text,
       options_json: field.options_json,
+      sort_order: field.sort_order,
+    })),
+    document_template_fields: (service.document_template_fields || []).map((field) => ({
+      field_key: field.field_key,
+      label: field.label,
+      field_type: field.field_type,
+      placeholder: field.placeholder,
+      help_text: field.help_text,
+      options_json: field.options_json,
+      is_required: field.is_required,
       sort_order: field.sort_order,
     })),
     published_at: service.published_at,
@@ -1854,6 +1947,13 @@ async function upsertServiceRecord(client, serviceId, payload, user, { isUpdate 
     serviceId,
     payload.form_fields,
     ["field_key", "label", "field_type", "placeholder", "help_text", "options_json", "sort_order"],
+  );
+  await syncSimpleChildTable(
+    client,
+    "service_document_template_fields",
+    serviceId,
+    payload.document_template_fields,
+    ["field_key", "label", "field_type", "placeholder", "help_text", "options_json", "is_required", "sort_order"],
   );
 
   return serviceId;

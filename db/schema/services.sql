@@ -413,6 +413,86 @@ CREATE TABLE IF NOT EXISTS service_form_fields (
 CREATE INDEX IF NOT EXISTS idx_service_form_fields_service
   ON service_form_fields (service_id, sort_order ASC, id ASC);
 
+CREATE TABLE IF NOT EXISTS service_document_template_fields (
+  id BIGSERIAL PRIMARY KEY,
+  service_id BIGINT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  field_key VARCHAR(120) NOT NULL,
+  label TEXT NOT NULL,
+  field_type service_form_field_type NOT NULL,
+  placeholder TEXT,
+  help_text TEXT,
+  options_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_required BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT service_document_template_fields_service_key_unique
+    UNIQUE (service_id, field_key),
+  CONSTRAINT service_document_template_fields_no_file
+    CHECK (field_type <> 'file')
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_document_template_fields_service
+  ON service_document_template_fields (service_id, sort_order ASC, id ASC);
+
+WITH template_variables AS (
+  SELECT
+    service_id,
+    field_key,
+    MIN(variable_position) AS first_position
+  FROM (
+    SELECT
+      service.id AS service_id,
+      trim((match_data.match)[1]) AS field_key,
+      match_data.ordinality AS variable_position
+    FROM services service
+    CROSS JOIN LATERAL regexp_matches(
+      COALESCE(service.document_template_html, ''),
+      '\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}',
+      'g'
+    ) WITH ORDINALITY AS match_data(match, ordinality)
+    WHERE service.service_type = 'documents'
+  ) raw_variables
+  WHERE field_key <> ''
+    AND field_key NOT IN ('service_title', 'variant_title', 'profile_title', 'today')
+  GROUP BY service_id, field_key
+)
+INSERT INTO service_document_template_fields (
+  service_id,
+  field_key,
+  label,
+  field_type,
+  placeholder,
+  help_text,
+  options_json,
+  is_required,
+  sort_order
+)
+SELECT
+  template_variables.service_id,
+  template_variables.field_key,
+  COALESCE(
+    service_form_fields.label,
+    initcap(replace(replace(template_variables.field_key, '_', ' '), '-', ' '))
+  ) AS label,
+  CASE
+    WHEN service_form_fields.field_type = 'file' THEN 'text'::service_form_field_type
+    ELSE COALESCE(service_form_fields.field_type, 'text'::service_form_field_type)
+  END AS field_type,
+  service_form_fields.placeholder,
+  service_form_fields.help_text,
+  COALESCE(service_form_fields.options_json, '[]'::jsonb) AS options_json,
+  TRUE AS is_required,
+  ROW_NUMBER() OVER (
+    PARTITION BY template_variables.service_id
+    ORDER BY template_variables.first_position ASC, template_variables.field_key ASC
+  ) - 1 AS sort_order
+FROM template_variables
+LEFT JOIN service_form_fields
+  ON service_form_fields.service_id = template_variables.service_id
+ AND service_form_fields.field_key = template_variables.field_key
+ON CONFLICT (service_id, field_key) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS service_requests (
   id BIGSERIAL PRIMARY KEY,
   service_id BIGINT NOT NULL REFERENCES services(id) ON DELETE RESTRICT,
