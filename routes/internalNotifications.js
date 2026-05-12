@@ -40,8 +40,8 @@ router.use(
 );
 
 function pickPayload(req) {
-  const { title, body, data, push, store, channel } = req.body || {};
-  return { title, body, data, push, store, channel };
+  const { title, body, data, push, store, channel, force } = req.body || {};
+  return { title, body, data, push, store, channel, force };
 }
 
 router.post("/user/:id", async (req, res) => {
