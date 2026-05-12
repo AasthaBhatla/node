@@ -1,6 +1,7 @@
 // controllers/jobController.js
 const jobService = require("../services/jobService");
 const jobPartnerListsService = require("../services/jobPartnerListsService");
+const { getPartnerPlatformStatus } = require("../services/adminConfigService");
 
 const notify = require("../services/notify");
 const userService = require("../services/userService");
@@ -450,6 +451,21 @@ exports.partnerEarnings = async (req, res) => {
     return failure(
       res,
       err.message || "Failed to fetch earnings",
+      err.statusCode || 500,
+    );
+  }
+};
+
+exports.partnerPlatformStatus = async (req, res) => {
+  try {
+    if (!requirePartner(req, res)) return;
+
+    const out = await getPartnerPlatformStatus();
+    return success(res, out, 200);
+  } catch (err) {
+    return failure(
+      res,
+      err.message || "Failed to fetch platform status",
       err.statusCode || 500,
     );
   }

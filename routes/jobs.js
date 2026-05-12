@@ -18,6 +18,7 @@ const jobController = require("../controllers/jobController");
  * - GET    /jobs/open/:jobId              open job detail (attachments etc.)
  * - GET    /jobs/partner/stats            partner dashboard stats
  * - GET    /jobs/partner/earnings         partner earnings breakup (pagination)
+ * - GET    /jobs/partner/platform-status  editable partner footer overlay metrics
  * - POST   /jobs/:jobId/apply             apply or update application (one per job)
  * - POST   /jobs/:jobId/withdraw          withdraw application
  * - POST   /jobs/:jobId/mark-complete     partner requests completion
@@ -42,6 +43,11 @@ router.get("/open/:jobId", authMiddleware, jobController.getOpenJobDetail);
 // ------------------- Partner dashboard APIs -------------------
 router.get("/partner/stats", authMiddleware, jobController.partnerStats);
 router.get("/partner/earnings", authMiddleware, jobController.partnerEarnings);
+router.get(
+  "/partner/platform-status",
+  authMiddleware,
+  jobController.partnerPlatformStatus,
+);
 
 // ------------------- Partner action APIs -------------------
 router.post("/:jobId/apply", authMiddleware, jobController.upsertApplication);

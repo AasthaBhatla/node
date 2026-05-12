@@ -4,6 +4,7 @@ const {
   importAdminConfig,
   savePostType,
   savePostTypeMeta,
+  savePartnerPlatformStatus,
   saveReviewsSettings,
   saveTaxonomy,
   saveTaxonomyMeta,
@@ -162,6 +163,22 @@ exports.putUsersSettings = async (req, res) => {
 exports.putReviewsSettings = async (req, res) => {
   try {
     const data = await saveReviewsSettings(req.body || {}, req.user);
+    return res.status(200).json({
+      status: "success",
+      body: data,
+    });
+  } catch (error) {
+    return failure(
+      res,
+      error.statusCode || 500,
+      error.message || "Internal server error",
+    );
+  }
+};
+
+exports.putPartnerPlatformStatus = async (req, res) => {
+  try {
+    const data = await savePartnerPlatformStatus(req.body || {}, req.user);
     return res.status(200).json({
       status: "success",
       body: data,

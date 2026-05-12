@@ -69,4 +69,11 @@ router.put(
   adminConfigController.putReviewsSettings,
 );
 
+router.put(
+  "/partner-platform-status",
+  authMiddleware,
+  requireAdmin(),
+  adminConfigController.putPartnerPlatformStatus,
+);
+
 module.exports = router;

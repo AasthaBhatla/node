@@ -14,6 +14,43 @@ const ALLOWED_META_TYPES = [
   "json",
 ];
 
+const DEFAULT_PARTNER_PLATFORM_STATUS = {
+  enabled: true,
+  title: "Live Platform Status",
+  status_label: "LIVE",
+  update_text: "Update 5 mins ago",
+  metrics: [
+    {
+      key: "tasks_available",
+      value: "1,250",
+      suffix: "↑",
+      label: "Tasks available",
+      tone: "blue",
+    },
+    {
+      key: "tasks_active",
+      value: "4,370",
+      suffix: "↑",
+      label: "Tasks active",
+      tone: "orange",
+    },
+    {
+      key: "tasks_estimated",
+      value: "₹1,23,684/-",
+      suffix: "↑",
+      label: "Tasks Estimated",
+      tone: "purple",
+    },
+    {
+      key: "average_earning",
+      value: "₹25,000/-",
+      suffix: "↑",
+      label: "Average Earning",
+      tone: "teal",
+    },
+  ],
+};
+
 let ensureTablePromise = null;
 
 function getDefaultConfig() {
@@ -28,6 +65,7 @@ function getDefaultConfig() {
     reviews: {
       meta_keys: [],
     },
+    partner_platform_status: DEFAULT_PARTNER_PLATFORM_STATUS,
     posts: [],
   };
 }
@@ -151,6 +189,48 @@ function normalizeReviewsConfig(reviews) {
   };
 }
 
+function normalizePartnerPlatformMetric(metric, index) {
+  const fallback =
+    DEFAULT_PARTNER_PLATFORM_STATUS.metrics[index] ||
+    DEFAULT_PARTNER_PLATFORM_STATUS.metrics[0];
+  const source = metric && typeof metric === "object" ? metric : {};
+  const key = sanitizeSlug(source.key || fallback.key).replace(/-/g, "_");
+  const value = String(source.value ?? fallback.value ?? "").trim();
+  const label = String(source.label ?? fallback.label ?? "").trim();
+  const suffix = String(source.suffix ?? fallback.suffix ?? "").trim();
+  const tone = String(source.tone ?? fallback.tone ?? "blue").trim();
+
+  return {
+    key: key || fallback.key,
+    value,
+    suffix,
+    label,
+    tone,
+  };
+}
+
+function normalizePartnerPlatformStatus(status) {
+  const source = status && typeof status === "object" ? status : {};
+  const metrics = Array.isArray(source.metrics)
+    ? source.metrics
+    : DEFAULT_PARTNER_PLATFORM_STATUS.metrics;
+  const normalizedMetrics = DEFAULT_PARTNER_PLATFORM_STATUS.metrics.map((fallback, index) =>
+    normalizePartnerPlatformMetric(metrics[index] || fallback, index),
+  );
+
+  return {
+    enabled: source.enabled === undefined ? true : source.enabled !== false,
+    title: String(source.title || DEFAULT_PARTNER_PLATFORM_STATUS.title).trim(),
+    status_label: String(
+      source.status_label || DEFAULT_PARTNER_PLATFORM_STATUS.status_label,
+    ).trim(),
+    update_text: String(
+      source.update_text || DEFAULT_PARTNER_PLATFORM_STATUS.update_text,
+    ).trim(),
+    metrics: normalizedMetrics,
+  };
+}
+
 function normalizeAdminConfig(config) {
   const source = config && typeof config === "object" ? config : {};
   return {
@@ -158,6 +238,9 @@ function normalizeAdminConfig(config) {
     taxonomies: normalizeTaxonomies(source.taxonomies),
     users: normalizeUsersConfig(source.users),
     reviews: normalizeReviewsConfig(source.reviews),
+    partner_platform_status: normalizePartnerPlatformStatus(
+      source.partner_platform_status,
+    ),
     posts: Array.isArray(source.posts) ? source.posts : [],
   };
 }
@@ -398,12 +481,27 @@ async function saveReviewsSettings(reviews, adminUser) {
   return config.reviews;
 }
 
+async function savePartnerPlatformStatus(status, adminUser) {
+  const configResponse = await getAdminConfig();
+  const config = normalizeAdminConfig(configResponse);
+  config.partner_platform_status = normalizePartnerPlatformStatus(status);
+  await writeConfig(config, adminUser);
+  return config.partner_platform_status;
+}
+
+async function getPartnerPlatformStatus() {
+  const configResponse = await getAdminConfig();
+  return normalizePartnerPlatformStatus(configResponse.partner_platform_status);
+}
+
 module.exports = {
   deletePostType,
   getAdminConfig,
+  getPartnerPlatformStatus,
   importAdminConfig,
   savePostType,
   savePostTypeMeta,
+  savePartnerPlatformStatus,
   saveReviewsSettings,
   saveTaxonomy,
   saveTaxonomyMeta,
