@@ -53,9 +53,16 @@ async function lockWallets(client, userId, partnerId) {
   return map;
 }
 
-function computeShouldHaveMinutes(startedAt, now = new Date()) {
+function computeShouldHaveMinutes(
+  startedAt,
+  now = new Date(),
+  totalPausedMs = 0,
+  billingPausedAt = null,
+) {
   const started = new Date(startedAt);
-  const diffMs = now.getTime() - started.getTime();
+  const effectiveNow = billingPausedAt ? new Date(billingPausedAt) : now;
+  const pausedMs = Number(totalPausedMs || 0);
+  const diffMs = effectiveNow.getTime() - started.getTime() - pausedMs;
   if (diffMs < 0) return 0;
 
   // minute 1 billed immediately at start
@@ -417,7 +424,12 @@ exports.billDueMinutesForSession = async ({
       return { session, billed: 0, details: [], reason: "not_active" };
     }
 
-    const shouldHave = computeShouldHaveMinutes(session.started_at, now);
+    const shouldHave = computeShouldHaveMinutes(
+      session.started_at,
+      now,
+      session.total_paused_ms,
+      session.billing_paused_at,
+    );
     const already = parseInt(session.total_minutes_billed || 0, 10);
 
     if (shouldHave <= already) {
@@ -460,6 +472,101 @@ exports.billDueMinutesForSession = async ({
   } finally {
     client.release();
   }
+};
+
+exports.pauseSession = async ({ userId, sessionId, pausedAt }) => {
+  const uid = parsePosInt(userId);
+  const sid = parsePosInt(sessionId);
+
+  if (!uid) {
+    const e = new Error("Unauthorized");
+    e.statusCode = 401;
+    throw e;
+  }
+  if (!sid) {
+    const e = new Error("Invalid session_id");
+    e.statusCode = 400;
+    throw e;
+  }
+
+  const requestedPauseAt = pausedAt ? new Date(pausedAt) : new Date();
+  const now = new Date();
+  const pauseAt =
+    Number.isFinite(requestedPauseAt.getTime()) && requestedPauseAt.getTime() <= now.getTime()
+      ? requestedPauseAt
+      : now;
+
+  // Bill any elapsed active minutes up to the pause point, then freeze billing.
+  await exports.billDueMinutesForSession({
+    userId: uid,
+    sessionId: sid,
+    maxMinutes: 10,
+    now: pauseAt,
+  }).catch((err) => {
+    if (err?.statusCode !== 400) throw err;
+  });
+
+  const r = await pool.query(
+    `UPDATE sessions
+     SET billing_paused_at = COALESCE(billing_paused_at, $3)
+     WHERE session_id = $1 AND user_id = $2 AND status = 'active'
+     RETURNING *`,
+    [sid, uid, pauseAt],
+  );
+
+  if (!r.rows[0]) {
+    const e = new Error("Session not found or already ended");
+    e.statusCode = 404;
+    throw e;
+  }
+
+  return { session: r.rows[0] };
+};
+
+exports.resumeSession = async ({ userId, sessionId }) => {
+  const uid = parsePosInt(userId);
+  const sid = parsePosInt(sessionId);
+
+  if (!uid) {
+    const e = new Error("Unauthorized");
+    e.statusCode = 401;
+    throw e;
+  }
+  if (!sid) {
+    const e = new Error("Invalid session_id");
+    e.statusCode = 400;
+    throw e;
+  }
+
+  const r = await pool.query(
+    `UPDATE sessions
+     SET total_paused_ms = total_paused_ms +
+           GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - billing_paused_at)) * 1000))::BIGINT,
+         billing_paused_at = NULL
+     WHERE session_id = $1
+       AND user_id = $2
+       AND status = 'active'
+       AND billing_paused_at IS NOT NULL
+     RETURNING *`,
+    [sid, uid],
+  );
+
+  if (r.rows[0]) {
+    return { session: r.rows[0] };
+  }
+
+  const existing = await pool.query(
+    `SELECT * FROM sessions WHERE session_id = $1 AND user_id = $2`,
+    [sid, uid],
+  );
+
+  if (!existing.rows[0]) {
+    const e = new Error("Session not found");
+    e.statusCode = 404;
+    throw e;
+  }
+
+  return { session: existing.rows[0] };
 };
 
 exports.listMySessions = async ({ userId, limit = 50, offset = 0 }) => {

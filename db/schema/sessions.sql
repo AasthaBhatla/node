@@ -22,9 +22,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 
   total_minutes_billed INT NOT NULL DEFAULT 0 CHECK (total_minutes_billed >= 0),
   total_credits_billed INT NOT NULL DEFAULT 0 CHECK (total_credits_billed >= 0),
+  billing_paused_at TIMESTAMP,
+  total_paused_ms BIGINT NOT NULL DEFAULT 0 CHECK (total_paused_ms >= 0),
 
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS billing_paused_at TIMESTAMP;
+
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS total_paused_ms BIGINT NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_created
 ON sessions(user_id, started_at DESC);
