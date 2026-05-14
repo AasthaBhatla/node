@@ -16,6 +16,7 @@ router.post("/find", userController.findUsersPublic);
 router.get("/public/:id", userController.getPublicUserById);
 router.post("/me", authMiddleware, userController.updateMe);
 router.post("/", userController.getUsers);
+router.post("/:id/like", authMiddleware, userController.setProfileLike);
 
 router.post(
   "/profile-picture",

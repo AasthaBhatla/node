@@ -106,6 +106,127 @@ const getUserMetadata = async (userId) => {
   }
 };
 
+const parseMetadataIdList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item).trim())
+      .filter(Boolean);
+  }
+
+  const text = String(value || "").trim();
+  if (!text || text === "[]") return [];
+
+  try {
+    const decoded = JSON.parse(text);
+    if (Array.isArray(decoded)) {
+      return decoded
+        .map((item) => String(item).trim())
+        .filter(Boolean);
+    }
+  } catch {
+    // Keep CSV/plain text compatibility with the website officer count parser.
+  }
+
+  return text
+    .split(/[\s,|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const setUserLikeForTarget = async (targetUserId, likerUserId, liked = true) => {
+  const client = await pool.connect();
+
+  try {
+    const targetId = parseInt(targetUserId, 10);
+    const likerId = parseInt(likerUserId, 10);
+
+    if (!Number.isFinite(targetId) || targetId < 1) {
+      const error = new Error("Invalid target user");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!Number.isFinite(likerId) || likerId < 1) {
+      const error = new Error("Invalid liker user");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (targetId === likerId) {
+      const error = new Error("You cannot like your own profile");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await client.query("BEGIN");
+
+    const targetRes = await client.query(
+      `SELECT id, role FROM users WHERE id = $1 LIMIT 1`,
+      [targetId],
+    );
+    const targetUser = targetRes.rows[0];
+
+    if (!targetUser) {
+      const error = new Error("Target user not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const allowedRoles = new Set(["officer", "lawyer", "expert", "ngo", "partner"]);
+    if (!allowedRoles.has(String(targetUser.role || "").toLowerCase())) {
+      const error = new Error("This profile cannot receive likes");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await client.query(
+      `INSERT INTO user_metadata (user_id, key, value)
+       VALUES ($1, 'bookmark_user_ids', '')
+       ON CONFLICT (user_id, key) DO NOTHING`,
+      [targetId],
+    );
+
+    const metaRes = await client.query(
+      `SELECT value
+       FROM user_metadata
+       WHERE user_id = $1 AND key = 'bookmark_user_ids'
+       FOR UPDATE`,
+      [targetId],
+    );
+
+    const ids = new Set(parseMetadataIdList(metaRes.rows[0]?.value));
+    const likerKey = String(likerId);
+
+    if (liked) {
+      ids.add(likerKey);
+    } else {
+      ids.delete(likerKey);
+    }
+
+    const nextValue = Array.from(ids).join(",");
+    await client.query(
+      `UPDATE user_metadata
+       SET value = $3
+       WHERE user_id = $1 AND key = $2`,
+      [targetId, "bookmark_user_ids", nextValue],
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      targetUserId: targetId,
+      liked: ids.has(likerKey),
+      likesCount: ids.size,
+      bookmark_user_ids: nextValue,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 const updateUserRole = async (userId, role) => {
   try {
     await pool.query(`UPDATE users SET role = $1 WHERE id = $2`, [
@@ -1515,6 +1636,7 @@ module.exports = {
   markUserAsRegistered,
   updateUserMetadata,
   getUserMetadata,
+  setUserLikeForTarget,
   updateUserRole,
   getUserById,
   getUsers,

@@ -24,6 +24,7 @@ const {
   getUsersByIds,
   findUsersPublic,
   getPublicUserById: getPublicUserProfileById,
+  setUserLikeForTarget,
 } = require("../services/userService");
 const notifPrefs = require("../services/notificationPrefsService");
 
@@ -171,6 +172,26 @@ exports.getPublicUserById = async (req, res) => {
   } catch (err) {
     console.error("Get public user by ID error:", err);
     return res.status(500).json({ error: "Server error" });
+  }
+};
+
+exports.setProfileLike = async (req, res) => {
+  const targetUserId = req.params.id;
+  const likerUserId = req.user?.id;
+  const liked = req.body?.liked !== false;
+
+  try {
+    const result = await setUserLikeForTarget(targetUserId, likerUserId, liked);
+    return res.status(200).json({
+      status: "success",
+      body: result,
+    });
+  } catch (err) {
+    console.error("Set profile like error:", err);
+    return res.status(err.statusCode || 500).json({
+      status: "failure",
+      body: { message: err.message || "Failed to update like" },
+    });
   }
 };
 
