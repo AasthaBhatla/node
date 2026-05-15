@@ -483,7 +483,7 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
             WHERE created_at >= $1::date
               AND created_at < ($2::date + INTERVAL '1 day')
           ), 0)::bigint AS platform_earnings_credits
-        FROM job_posting_fees
+        FROM task_posting_fees
       `,
       [dateFrom, dateTo],
     ),
@@ -562,11 +562,11 @@ async function fetchFinanceSummary({ range = "30d", timeZone = "UTC", from, to }
             WHEN direction = 'credit' AND reference_kind = 'admin_credit' THEN 'admin_credits'
             WHEN direction = 'credit' AND reason = 'refund' THEN 'refunds'
             WHEN direction = 'credit' AND reference_kind = 'session' THEN 'session_earnings'
-            WHEN direction = 'credit' AND reason = 'job_payout' THEN 'job_payouts'
+            WHEN direction = 'credit' AND reason IN ('task_payout', 'job_payout') THEN 'task_payouts'
             WHEN direction = 'debit' AND reference_kind = 'session' THEN 'session_spend'
             WHEN direction = 'debit' AND reference_kind = 'admin_payout' THEN 'admin_payouts'
-            WHEN direction = 'debit' AND reason = 'job_post_fee' THEN 'job_post_fees'
-            WHEN direction = 'debit' AND reason = 'job_escrow_hold' THEN 'job_escrow_holds'
+            WHEN direction = 'debit' AND reason IN ('task_post_fee', 'job_post_fee') THEN 'task_post_fees'
+            WHEN direction = 'debit' AND reason IN ('task_escrow_hold', 'job_escrow_hold') THEN 'task_escrow_holds'
             ELSE 'other'
           END AS bucket,
           COALESCE(SUM(amount_credits), 0)::bigint AS total_credits

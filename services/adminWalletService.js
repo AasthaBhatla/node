@@ -770,8 +770,8 @@ async function getUserWalletAnalyticsForAdmin({
           SELECT
             CASE
               WHEN reference_kind = 'session' THEN 'session_spend'
-              WHEN reason = 'job_post_fee' THEN 'job_post_fee'
-              WHEN reason = 'job_escrow_hold' THEN 'job_escrow_hold'
+              WHEN reason IN ('task_post_fee', 'job_post_fee') THEN 'task_post_fee'
+              WHEN reason IN ('task_escrow_hold', 'job_escrow_hold') THEN 'task_escrow_hold'
               WHEN reference_kind = 'admin_payout' THEN 'admin_payout'
               ELSE 'other'
             END AS bucket,
@@ -827,8 +827,8 @@ async function getUserWalletAnalyticsForAdmin({
 
     const spendLabelMap = {
       session_spend: "Session charges",
-      job_post_fee: "Job post fees",
-      job_escrow_hold: "Job escrow holds",
+      task_post_fee: "Task post fees",
+      task_escrow_hold: "Task escrow holds",
       admin_payout: "Admin payouts",
       other: "Other debits",
     };
